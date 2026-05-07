@@ -1561,7 +1561,39 @@ function candidateSummary(candidate, decision = null) {
   return lines.filter(Boolean).join('\n');
 }
 
-function candidateButtons(candidateId) {
+function candidateButtons(candidateId, decision = null) {
+  const verdict = String(decision?.verdict || '').toUpperCase();
+  if (verdict && verdict !== 'BUY') {
+    return {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `Skipped: ${verdict}`, callback_data: 'noop' }],
+          [
+            { text: 'View Candidate', callback_data: `cand:${candidateId}` },
+            { text: 'Ignore', callback_data: `ign:${candidateId}` },
+          ],
+          [{ text: 'Positions', callback_data: 'menu:positions' }],
+        ],
+      },
+    };
+  }
+  if (verdict === 'BUY') {
+    return {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'LLM BUY selected', callback_data: 'noop' }],
+          [
+            { text: 'View Candidate', callback_data: `cand:${candidateId}` },
+            { text: 'Positions', callback_data: 'menu:positions' },
+          ],
+          [
+            { text: 'Set TP/SL', callback_data: `tpsl:c:${candidateId}` },
+            { text: 'Ignore', callback_data: `ign:${candidateId}` },
+          ],
+        ],
+      },
+    };
+  }
   return {
     reply_markup: {
       inline_keyboard: [
@@ -1611,7 +1643,7 @@ async function sendTelegram(text, extra = {}) {
 }
 
 async function sendCandidateAlert(candidateId, candidate, decision) {
-  const sent = await sendTelegram(candidateSummary(candidate, decision), candidateButtons(candidateId));
+  const sent = await sendTelegram(candidateSummary(candidate, decision), candidateButtons(candidateId, decision));
   db.prepare(`
     INSERT INTO alerts (candidate_id, mint, kind, sent_at_ms, telegram_message_id, payload_json)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -2269,6 +2301,7 @@ async function handleCallback(query) {
   await answerCallback(query);
 
   if (data === 'menu:main') return sendMenu(chatId);
+  if (data === 'noop') return null;
   if (data === 'menu:agent') {
     return bot.sendMessage(chatId, agentText(), {
       parse_mode: 'HTML',
@@ -2351,7 +2384,7 @@ async function sendCandidate(chatId, id) {
   await bot.sendMessage(chatId, candidateSummary(row.candidate, decision), {
     parse_mode: 'HTML',
     disable_web_page_preview: true,
-    ...candidateButtons(id),
+    ...candidateButtons(id, decision),
   });
 }
 
