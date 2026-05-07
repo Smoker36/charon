@@ -1441,6 +1441,7 @@ async function refreshPosition(position, { autoExit = true } = {}) {
   const trailDrop = highWaterMcap > 0 ? (Number(mcap) / highWaterMcap - 1) * 100 : 0;
   const trailingHit = trailingArmed && position.trailing_enabled && trailDrop <= -Math.abs(Number(position.trailing_percent));
   let exitReason = null;
+  let closed = false;
   if (slHit) exitReason = 'SL';
   else if (tpHit && !position.trailing_enabled) exitReason = 'TP';
   else if (trailingHit) exitReason = 'TRAILING_TP';
@@ -1463,6 +1464,7 @@ async function refreshPosition(position, { autoExit = true } = {}) {
       INSERT INTO dry_run_trades (position_id, mint, side, at_ms, price, mcap, size_sol, token_amount_est, reason, payload_json)
       VALUES (?, ?, 'sell', ?, ?, ?, ?, ?, ?, ?)
     `).run(position.id, position.mint, now(), price, mcap, position.size_sol, position.token_amount_est, exitReason, json({ pnlPercent, pnlSol, sell }));
+    closed = true;
   } else if (exitReason && autoExit) {
     db.prepare(`
       UPDATE dry_run_positions
@@ -1473,9 +1475,12 @@ async function refreshPosition(position, { autoExit = true } = {}) {
       INSERT INTO dry_run_trades (position_id, mint, side, at_ms, price, mcap, size_sol, token_amount_est, reason, payload_json)
       VALUES (?, ?, 'sell', ?, ?, ?, ?, ?, ?, ?)
     `).run(position.id, position.mint, now(), price, mcap, position.size_sol, position.token_amount_est, exitReason, json({ pnlPercent, pnlSol }));
+    closed = true;
   }
   return {
     ...position,
+    status: closed ? 'closed' : position.status,
+    closed_at_ms: closed ? now() : position.closed_at_ms,
     gmgn,
     asset,
     price,
@@ -1487,10 +1492,10 @@ async function refreshPosition(position, { autoExit = true } = {}) {
     pnl_percent: pnlPercent,
     pnlSol,
     pnl_sol: pnlSol,
-    exitReason,
-    exit_reason: exitReason,
-    exit_mcap: exitReason ? mcap : position.exit_mcap,
-    exit_price: exitReason ? price : position.exit_price,
+    exitReason: closed ? exitReason : null,
+    exit_reason: closed ? exitReason : position.exit_reason,
+    exit_mcap: closed ? mcap : position.exit_mcap,
+    exit_price: closed ? price : position.exit_price,
   };
 }
 
@@ -2421,13 +2426,14 @@ async function sendPosition(chatId, id) {
   let row = db.prepare('SELECT * FROM dry_run_positions WHERE id = ?').get(id);
   if (!row) return bot.sendMessage(chatId, 'Position not found.');
   if (row.status === 'open') {
-    const refreshed = await refreshPosition(row, { autoExit: false }).catch((err) => {
+    const refreshed = await refreshPosition(row, { autoExit: row.execution_mode !== 'live' }).catch((err) => {
       console.log(`[position] refresh ${id} ${err.message}`);
       return null;
     });
     if (refreshed) row = { ...row, ...refreshed };
   }
-  await bot.sendMessage(chatId, formatPosition(row), { parse_mode: 'HTML', disable_web_page_preview: true, ...positionButtons(id) });
+  const buttons = row.status === 'open' ? positionButtons(id) : {};
+  await bot.sendMessage(chatId, formatPosition(row), { parse_mode: 'HTML', disable_web_page_preview: true, ...buttons });
 }
 
 async function closePosition(chatId, id, reason) {
