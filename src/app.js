@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import TelegramBot from 'node-telegram-bot-api';
 import WebSocket from 'ws';
 import { randomUUID } from 'node:crypto';
-import https from 'node:https';
+import { setDefaultResultOrder } from 'node:dns';
 import {
   APP_NAME,
   DB_PATH,
@@ -36,6 +36,7 @@ import {
 import { accountLink, escapeHtml, fmtPct, fmtSol, fmtUsd, gmgnLink, short, txLink } from './format.js';
 import { executeJupiterSwap, initLiveExecution, liveWalletBalanceLamports } from './liveExecutor.js';
 
+setDefaultResultOrder('ipv4first');
 validateConfig();
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
@@ -46,9 +47,9 @@ const gmgnCache = new Map();
 const seenFeeClaims = new Map();
 const seenSignalCandidates = new Map();
 const pendingNumericInputs = new Map();
-const gmgnHttpsAgent = new https.Agent({ family: 4, keepAlive: true });
 const jupiterAssetCache = new Map();
 let jupiterAssetBackoffUntil = 0;
+let lastGmgnRequestAt = 0;
 const gmgnBackoff = {
   tokenUntil: 0,
   tokenReason: '',
@@ -70,6 +71,75 @@ function safeJson(value, fallback = null) {
 
 function json(value) {
   return JSON.stringify(value ?? null);
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function paceGmgnRequest() {
+  const delayMs = Math.max(0, numSetting('gmgn_request_delay_ms', 2500));
+  if (!delayMs) return;
+  const elapsed = now() - lastGmgnRequestAt;
+  if (elapsed < delayMs) await sleep(delayMs - elapsed);
+  lastGmgnRequestAt = now();
+}
+
+function appendParams(url, params = {}) {
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null) continue;
+    if (Array.isArray(value)) {
+      for (const entry of value.filter(item => item != null && item !== '')) {
+        url.searchParams.append(key, String(entry));
+      }
+    } else {
+      url.searchParams.set(key, String(value));
+    }
+  }
+}
+
+async function gmgnFetch(pathname, { params = {} } = {}) {
+  const url = new URL(`https://openapi.gmgn.ai${pathname}`);
+  appendParams(url, {
+    ...params,
+    timestamp: Math.floor(now() / 1000),
+    client_id: randomUUID(),
+  });
+  const maxRetries = Math.max(0, Math.floor(numSetting('gmgn_max_retries', 2)));
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    await paceGmgnRequest();
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'X-APIKEY': GMGN_API_KEY,
+        'Content-Type': 'application/json',
+      },
+    });
+    const text = await res.text().catch(() => '');
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { raw: text };
+    }
+    if (res.ok) return payload;
+    const message = payload?.message || payload?.error || payload?.raw || `GMGN ${pathname} ${res.status}`;
+    const rateLimited = res.status === 429 || /rate limit|temporarily banned/i.test(String(message));
+    if (rateLimited && attempt < maxRetries) {
+      const retryAfter = Number(res.headers.get('retry-after'));
+      const backoffMs = Number.isFinite(retryAfter)
+        ? retryAfter * 1000
+        : /temporarily banned/i.test(String(message))
+          ? 60_000
+          : Math.min(30_000, 3000 * 2 ** attempt);
+      await sleep(backoffMs);
+      continue;
+    }
+    const error = new Error(message);
+    error.response = { status: res.status, data: payload, headers: Object.fromEntries(res.headers.entries()) };
+    throw error;
+  }
+  throw new Error(`GMGN ${pathname} failed`);
 }
 
 function gmgnBackoffKey(kind) {
@@ -315,6 +385,8 @@ function initDb() {
     min_graduated_volume_usd: '0',
     max_top20_holder_percent: '100',
     min_saved_wallet_holders: '0',
+    gmgn_request_delay_ms: process.env.GMGN_REQUEST_DELAY_MS || '2500',
+    gmgn_max_retries: process.env.GMGN_MAX_RETRIES || '2',
     trending_enabled: process.env.TRENDING_ENABLED || 'true',
     trending_source: process.env.TRENDING_SOURCE || 'jupiter',
     trending_allow_degen: process.env.TRENDING_ALLOW_DEGEN || 'false',
@@ -560,22 +632,18 @@ async function fetchJupiterTrendingRows(interval, limit) {
 
 async function fetchGmgnTrendingRows(interval, limit) {
   if (gmgnBackoffActive('trending')) return [];
-  const url = new URL('https://openapi.gmgn.ai/v1/market/rank');
-  url.searchParams.set('chain', 'sol');
-  url.searchParams.set('interval', interval);
-  url.searchParams.set('limit', String(limit));
-  url.searchParams.set('order_by', setting('trending_order_by', 'volume'));
-  url.searchParams.set('direction', 'desc');
-  for (const filter of ['renounced', 'frozen', 'not_wash_trading']) url.searchParams.append('filters', filter);
-  for (const platform of ['Pump.fun', 'meteora_virtual_curve', 'pool_pump_amm']) url.searchParams.append('platforms', platform);
-  url.searchParams.set('timestamp', String(Math.floor(now() / 1000)));
-  url.searchParams.set('client_id', randomUUID());
-  const res = await axios.get(url.toString(), {
-    timeout: 10_000,
-    headers: { ...JSON_HEADERS, 'X-APIKEY': GMGN_API_KEY },
-    httpsAgent: gmgnHttpsAgent,
+  const payload = await gmgnFetch('/v1/market/rank', {
+    params: {
+      chain: 'sol',
+      interval,
+      limit,
+      order_by: setting('trending_order_by', 'volume'),
+      direction: 'desc',
+      filters: ['renounced', 'frozen', 'not_wash_trading'],
+      platforms: ['Pump.fun', 'meteora_virtual_curve', 'pool_pump_amm'],
+    },
   });
-  return normalizedTrendingRows(res.data).map((row, index) => ({
+  return normalizedTrendingRows(payload).map((row, index) => ({
     ...row,
     interval,
     rank: index + 1,
@@ -629,19 +697,11 @@ async function fetchGmgnTokenInfo(mint, useCache = true) {
     return null;
   }
 
-  const url = new URL('https://openapi.gmgn.ai/v1/token/info');
-  url.searchParams.set('chain', 'sol');
-  url.searchParams.set('address', mint);
-  url.searchParams.set('timestamp', String(Math.floor(now() / 1000)));
-  url.searchParams.set('client_id', randomUUID());
-
   try {
-    const res = await axios.get(url.toString(), {
-      timeout: 7000,
-      headers: { ...JSON_HEADERS, 'X-APIKEY': GMGN_API_KEY },
-      httpsAgent: gmgnHttpsAgent,
+    const payload = await gmgnFetch('/v1/token/info', {
+      params: { chain: 'sol', address: mint },
     });
-    const data = res.data?.data?.data || res.data?.data || res.data;
+    const data = payload?.data?.data || payload?.data || payload;
     gmgnCache.set(mint, { at: now(), data });
     return data;
   } catch (err) {
