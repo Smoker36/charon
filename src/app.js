@@ -2731,13 +2731,70 @@ function agentKeyboard() {
   };
 }
 
+function navKeyboard(rows = []) {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        ...rows,
+        [{ text: 'Back', callback_data: 'menu:main' }],
+      ],
+    },
+  };
+}
+
 async function sendMenu(chatId = TELEGRAM_CHAT_ID) {
-  await bot.sendMessage(chatId, `🛶 <b>Charon</b>\nDry-run trench agent online.`, {
+  await bot.sendMessage(chatId, mainMenuText(), {
     parse_mode: 'HTML',
     disable_web_page_preview: true,
     ...(TELEGRAM_TOPIC_ID ? { message_thread_id: Number(TELEGRAM_TOPIC_ID) } : {}),
     ...menuKeyboard(),
   });
+}
+
+async function editMenuMessage(query, text, extra = {}) {
+  const chatId = query.message?.chat?.id || TELEGRAM_CHAT_ID;
+  const messageId = query.message?.message_id;
+  if (!messageId) {
+    return bot.sendMessage(chatId, text, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...extra,
+    });
+  }
+  try {
+    return await bot.editMessageText(text, {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...extra,
+    });
+  } catch (err) {
+    if (/message is not modified/i.test(err.message)) return null;
+    return bot.sendMessage(chatId, text, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...extra,
+    });
+  }
+}
+
+function mainMenuText() {
+  return `🛶 <b>Charon</b>\nDry-run trench agent online.`;
+}
+
+function walletsText() {
+  const rows = savedWallets();
+  const body = rows.length
+    ? rows.map(row => `• <b>${escapeHtml(row.label)}</b>: <code>${escapeHtml(row.address)}</code>`).join('\n')
+    : 'No saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt;';
+  return `👛 <b>Saved Wallets</b>\n\n${body}`;
+}
+
+function positionsText() {
+  const rows = allPositions(12);
+  const text = rows.length ? rows.map(formatPosition).join('\n\n') : 'No dry-run positions yet.';
+  return `📍 <b>Positions</b>\n\n${text}`;
 }
 
 async function answerCallback(query, text = '') {
@@ -2748,39 +2805,36 @@ async function handleCallback(query) {
   const data = query.data || '';
   const chatId = query.message?.chat?.id || TELEGRAM_CHAT_ID;
   await answerCallback(query);
+  if (!data.startsWith('input:')) pendingNumericInputs.delete(String(chatId));
 
-  if (data === 'menu:main') return sendMenu(chatId);
+  if (data === 'menu:main') return editMenuMessage(query, mainMenuText(), menuKeyboard());
   if (data === 'noop') return null;
   if (data === 'menu:agent') {
-    return bot.sendMessage(chatId, agentText(), {
-      parse_mode: 'HTML',
-      ...agentKeyboard(),
-    });
+    return editMenuMessage(query, agentText(), agentKeyboard());
   }
   if (data === 'toggle:agent') {
     setSetting('agent_enabled', boolSetting('agent_enabled', true) ? 'false' : 'true');
-    return bot.sendMessage(chatId, agentText(), { parse_mode: 'HTML' });
+    return editMenuMessage(query, agentText(), agentKeyboard());
   }
   if (data === 'toggle:trending_enabled' || data === 'toggle:trending_allow_degen') {
     const key = data.replace('toggle:', '');
     setSetting(key, boolSetting(key, key === 'trending_enabled') ? 'false' : 'true');
-    return bot.sendMessage(chatId, filtersText(), { parse_mode: 'HTML', ...filtersKeyboard() });
+    return editMenuMessage(query, filtersText(), filtersKeyboard());
   }
-  if (data === 'menu:filters') return bot.sendMessage(chatId, filtersText(), { parse_mode: 'HTML', ...filtersKeyboard() });
-  if (data === 'menu:wallets') {
-    const rows = savedWallets();
-    const body = rows.length
-      ? rows.map(row => `• <b>${escapeHtml(row.label)}</b>: <code>${escapeHtml(row.address)}</code>`).join('\n')
-      : 'No saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt;';
-    return bot.sendMessage(chatId, `👛 <b>Saved Wallets</b>\n\n${body}`, { parse_mode: 'HTML' });
-  }
-  if (data === 'menu:positions') return sendPositions(chatId);
-  if (data === 'menu:pnl') return sendPnl(chatId);
-  if (data === 'menu:settings') return bot.sendMessage(chatId, `${agentText()}\n\n${filtersText()}`, { parse_mode: 'HTML' });
+  if (data === 'menu:filters') return editMenuMessage(query, filtersText(), filtersKeyboard());
+  if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
+  if (data === 'menu:positions') return editMenuMessage(query, positionsText(), navKeyboard());
+  if (data === 'menu:pnl') return sendPnl(chatId, query);
+  if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
+    [
+      { text: 'Agent', callback_data: 'menu:agent' },
+      { text: 'Filters', callback_data: 'menu:filters' },
+    ],
+  ]));
 
   const [kind, id, value] = data.split(':');
-  if (kind === 'input') return requestNumericFilterInput(chatId, id);
-  if (kind === 'set') return updateSettingFromButton(chatId, id, value);
+  if (kind === 'input') return requestNumericFilterInput(query, id);
+  if (kind === 'set') return updateSettingFromButton(query, id, value);
   if (kind === 'batch') return sendBatch(chatId, Number(id));
   if (kind === 'intent') {
     if (value === 'confirm') return executeConfirmedIntent(chatId, Number(id));
@@ -2818,12 +2872,12 @@ async function handleCallback(query) {
     });
     return sendPositionOpen(positionId);
   }
-  if (kind === 'tpsl') return sendTpSlDefaults(chatId);
-  if (kind === 'pos') return sendPosition(chatId, Number(id));
+  if (kind === 'tpsl') return sendTpSlDefaults(chatId, query);
+  if (kind === 'pos') return sendPosition(chatId, Number(id), query);
   if (kind === 'sell') return closePosition(chatId, Number(id), 'MANUAL');
-  if (kind === 'tp') return updatePositionRule(chatId, Number(id), 'tp_percent', Number(value));
-  if (kind === 'sl') return updatePositionRule(chatId, Number(id), 'sl_percent', Number(value));
-  if (kind === 'trail') return toggleTrailing(chatId, Number(id));
+  if (kind === 'tp') return updatePositionRule(chatId, Number(id), 'tp_percent', Number(value), query);
+  if (kind === 'sl') return updatePositionRule(chatId, Number(id), 'sl_percent', Number(value), query);
+  if (kind === 'trail') return toggleTrailing(chatId, Number(id), query);
   return null;
 }
 
@@ -2838,9 +2892,8 @@ async function sendCandidate(chatId, id) {
   });
 }
 
-async function sendTpSlDefaults(chatId) {
-  await bot.sendMessage(chatId, agentText(), {
-    parse_mode: 'HTML',
+async function sendTpSlDefaults(chatId, query = null) {
+  const keyboard = {
     reply_markup: {
       inline_keyboard: [
         [
@@ -2858,7 +2911,9 @@ async function sendTpSlDefaults(chatId) {
         [{ text: 'Back', callback_data: 'menu:main' }],
       ],
     },
-  });
+  };
+  if (query) return editMenuMessage(query, agentText(), keyboard);
+  await bot.sendMessage(chatId, agentText(), { parse_mode: 'HTML', ...keyboard });
 }
 
 async function sendPositions(chatId) {
@@ -2867,7 +2922,7 @@ async function sendPositions(chatId) {
   await bot.sendMessage(chatId, `📍 <b>Positions</b>\n\n${text}`, { parse_mode: 'HTML', disable_web_page_preview: true });
 }
 
-async function sendPosition(chatId, id) {
+async function sendPosition(chatId, id, query = null) {
   let row = db.prepare('SELECT * FROM dry_run_positions WHERE id = ?').get(id);
   if (!row) return bot.sendMessage(chatId, 'Position not found.');
   if (row.status === 'open') {
@@ -2878,6 +2933,7 @@ async function sendPosition(chatId, id) {
     if (refreshed) row = { ...row, ...refreshed };
   }
   const buttons = row.status === 'open' ? positionButtons(id) : {};
+  if (query) return editMenuMessage(query, formatPosition(row), buttons);
   await bot.sendMessage(chatId, formatPosition(row), { parse_mode: 'HTML', disable_web_page_preview: true, ...buttons });
 }
 
@@ -2905,7 +2961,7 @@ async function closePosition(chatId, id, reason) {
   await bot.sendMessage(chatId, `${label} #${id}: ${escapeHtml(reason)} ${fmtPct(pnlPercent)}`, { parse_mode: 'HTML' });
 }
 
-async function updatePositionRule(chatId, id, field, nextValue) {
+async function updatePositionRule(chatId, id, field, nextValue, query = null) {
   if (!Number.isFinite(nextValue)) return bot.sendMessage(chatId, 'Invalid value.');
   db.prepare(`UPDATE dry_run_positions SET ${field} = ? WHERE id = ?`).run(nextValue, id);
   const row = db.prepare('SELECT * FROM dry_run_positions WHERE id = ?').get(id);
@@ -2921,10 +2977,10 @@ async function updatePositionRule(chatId, id, field, nextValue) {
         updated_at_ms = excluded.updated_at_ms
     `).run(id, row.tp_percent, row.sl_percent, row.trailing_enabled, row.trailing_percent, now());
   }
-  await sendPosition(chatId, id);
+  await sendPosition(chatId, id, query);
 }
 
-async function toggleTrailing(chatId, id) {
+async function toggleTrailing(chatId, id, query = null) {
   const row = db.prepare('SELECT * FROM dry_run_positions WHERE id = ?').get(id);
   if (!row) return bot.sendMessage(chatId, 'Position not found.');
   const next = row.trailing_enabled ? 0 : 1;
@@ -2939,10 +2995,11 @@ async function toggleTrailing(chatId, id) {
       trailing_percent = excluded.trailing_percent,
       updated_at_ms = excluded.updated_at_ms
   `).run(id, row.tp_percent, row.sl_percent, next, row.trailing_percent, now());
-  await sendPosition(chatId, id);
+  await sendPosition(chatId, id, query);
 }
 
-async function updateSettingFromButton(chatId, key, value) {
+async function updateSettingFromButton(query, key, value) {
+  const chatId = query.message?.chat?.id || TELEGRAM_CHAT_ID;
   const valid = new Set([
     'min_fee_claim_sol',
     'min_mcap_usd',
@@ -2980,15 +3037,21 @@ async function updateSettingFromButton(chatId, key, value) {
   const extra = key.startsWith('default_') || key === 'dry_run_buy_sol' || key === 'trading_mode' || key === 'llm_min_confidence' || key === 'llm_candidate_pick_count' || key === 'llm_candidate_max_age_ms' || key === 'max_open_positions'
     ? agentKeyboard()
     : filtersKeyboard();
-  return bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...extra });
+  return editMenuMessage(query, text, extra);
 }
 
-async function requestNumericFilterInput(chatId, key) {
+async function requestNumericFilterInput(query, key) {
+  const chatId = query.message?.chat?.id || TELEGRAM_CHAT_ID;
   if (!numericFilterLabels[key]) return bot.sendMessage(chatId, 'Unknown numeric filter.');
-  pendingNumericInputs.set(String(chatId), { key, at: now() });
-  return bot.sendMessage(
-    chatId,
+  pendingNumericInputs.set(String(chatId), {
+    key,
+    at: now(),
+    messageId: query.message?.message_id || null,
+  });
+  return editMenuMessage(
+    query,
     `Send a number for ${numericFilterLabels[key]}.\nExamples: 5, 50000, 100k, 1.5m, off`,
+    navKeyboard([[{ text: 'Cancel', callback_data: 'menu:filters' }]]),
   );
 }
 
@@ -3017,13 +3080,26 @@ async function consumeNumericFilterInput(chatId, text) {
   }
   pendingNumericInputs.delete(String(chatId));
   setSetting(pending.key, String(value));
-  await bot.sendMessage(chatId, filtersText(), { parse_mode: 'HTML', ...filtersKeyboard() });
+  if (pending.messageId) {
+    await bot.editMessageText(filtersText(), {
+      chat_id: chatId,
+      message_id: pending.messageId,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...filtersKeyboard(),
+    }).catch(() => bot.sendMessage(chatId, filtersText(), { parse_mode: 'HTML', ...filtersKeyboard() }));
+  } else {
+    await bot.sendMessage(chatId, filtersText(), { parse_mode: 'HTML', ...filtersKeyboard() });
+  }
   return true;
 }
 
-async function sendPnl(chatId) {
+async function sendPnl(chatId, query = null) {
   const wallets = savedWallets();
-  if (!wallets.length) return bot.sendMessage(chatId, 'No saved wallets. Use /walletadd <label> <address>.');
+  if (!wallets.length) {
+    const text = '📊 <b>PnL</b>\n\nNo saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt;.';
+    return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+  }
   const chunks = [];
   for (const wallet of wallets) {
     try {
@@ -3034,7 +3110,9 @@ async function sendPnl(chatId) {
       chunks.push(`<b>${escapeHtml(wallet.label)}</b>\nError: ${escapeHtml(err.message)}`);
     }
   }
-  await bot.sendMessage(chatId, `📊 <b>PnL</b>\n\n${chunks.join('\n\n')}`, { parse_mode: 'HTML' });
+  const text = `📊 <b>PnL</b>\n\n${chunks.join('\n\n')}`;
+  if (query) return editMenuMessage(query, text, navKeyboard());
+  await bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
 }
 
 function parseWindowMs(value = '12h') {
