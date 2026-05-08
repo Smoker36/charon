@@ -700,6 +700,7 @@ function summarizeCandles(label, candles) {
   return {
     label,
     available: true,
+    purpose: label === 'ath_context_24h_5m' ? 'ath_context' : 'range_context',
     candles: candles.length,
     fromTime: first.time,
     toTime: last.time,
@@ -729,7 +730,7 @@ async function fetchJupiterChartWindow(mint, interval, candles, label) {
 
 async function fetchJupiterChartContext(mint) {
   const windows = [
-    ['5_MINUTE', 288, 'recent_24h_5m'],
+    ['5_MINUTE', 288, 'ath_context_24h_5m'],
     ['1_HOUR', 168, 'swing_7d_1h'],
     ['4_HOUR', 180, 'long_30d_4h'],
   ];
@@ -747,9 +748,11 @@ async function fetchJupiterChartContext(mint) {
     : null;
   return {
     quote: 'native',
+    purpose: 'ATH/range context, not momentum scoring',
     currentNative,
     rangeHighNative: rangeHigh,
     belowRangeHighPercent: currentNative && rangeHigh ? (currentNative / rangeHigh - 1) * 100 : null,
+    distanceFromAthPercent: currentNative && rangeHigh ? (currentNative / rangeHigh - 1) * 100 : null,
     topBlastRisk,
     windows: results,
   };
@@ -1224,6 +1227,8 @@ function normalizeDecision(parsed, fallbackReason = '') {
 
 function compactCandidateForLlm(row) {
   const c = row.candidate;
+  const athWindow = c.chart?.windows?.find(window => window.label === 'ath_context_24h_5m' && window.available)
+    || c.chart?.windows?.find(window => window.label === 'recent_24h_5m' && window.available);
   return {
     candidate_id: row.id,
     mint: c.token?.mint,
@@ -1235,7 +1240,21 @@ function compactCandidateForLlm(row) {
     trending: c.trending,
     graduation: c.graduation,
     holders: c.holders,
-    chart: c.chart,
+    chart: {
+      purpose: 'ATH/range context only. Do not treat large 24h change as bullish/bearish momentum by itself.',
+      currentNative: c.chart?.currentNative,
+      rangeHighNative: c.chart?.rangeHighNative,
+      distanceFromAthPercent: c.chart?.distanceFromAthPercent ?? c.chart?.belowRangeHighPercent,
+      topBlastRisk: c.chart?.topBlastRisk,
+      athContext24h: athWindow ? {
+        current: athWindow.current,
+        high: athWindow.high,
+        low: athWindow.low,
+        distanceFromHighPercent: athWindow.belowHighPercent,
+        aboveLowPercent: athWindow.aboveLowPercent,
+      } : null,
+      windows: c.chart?.windows,
+    },
     savedWalletExposure: c.savedWalletExposure,
     twitterNarrative: c.twitterNarrative,
     filters: c.filters,
@@ -1265,6 +1284,8 @@ async function decideCandidateBatch(rows, triggerCandidateId) {
     'Use verdict BUY only for the single best unusually strong asymmetric opportunity.',
     'Use WATCH if candidates are interesting but none deserves a buy.',
     'Use PASS if the set is weak or unsafe.',
+    'Chart data is ATH/range context. Do not penalize or reward a token only because 24h change is huge; new Pump tokens often do that.',
+    'Use distance from ATH/range high and top-blast risk to decide whether entry is late.',
     'Confidence is your conviction from 0 to 100, not probability.',
   ].join(' ');
   const user = {
@@ -1683,7 +1704,8 @@ function formatRecipients(shareholders) {
 }
 
 function candidateSummary(candidate, decision = null) {
-  const chartWindow = candidate.chart?.windows?.find(row => row.label === 'recent_24h_5m' && row.available);
+  const chartWindow = candidate.chart?.windows?.find(row => row.label === 'ath_context_24h_5m' && row.available)
+    || candidate.chart?.windows?.find(row => row.label === 'recent_24h_5m' && row.available);
   const route = candidate.signals?.label || signalLabel(candidate.signals);
   const lines = [
     `🛶 <b>Charon Candidate</b>`,
@@ -1712,8 +1734,8 @@ function candidateSummary(candidate, decision = null) {
       `Smart: ${candidate.metrics.trendingSmartDegenCount || 0}`,
     ].join(' · ') : null,
     chartWindow ? [
-      `Chart 24h: ${fmtPct(chartWindow.changePercent)}`,
-      `From high: ${fmtPct(chartWindow.belowHighPercent)}`,
+      `ATH ctx: ${fmtPct(chartWindow.belowHighPercent)} from 24h high`,
+      `Range low: ${fmtPct(chartWindow.aboveLowPercent)}`,
       `Top risk: ${candidate.chart.topBlastRisk ? 'yes' : 'no'}`,
     ].join(' · ') : null,
     candidate.twitterNarrative?.metrics ? [
