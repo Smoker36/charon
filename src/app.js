@@ -50,6 +50,7 @@ const pendingNumericInputs = new Map();
 const jupiterAssetCache = new Map();
 let jupiterAssetBackoffUntil = 0;
 let lastGmgnRequestAt = 0;
+let gmgnQueue = Promise.resolve();
 const gmgnBackoff = {
   tokenUntil: 0,
   tokenReason: '',
@@ -85,6 +86,20 @@ async function paceGmgnRequest() {
   lastGmgnRequestAt = now();
 }
 
+function enqueueGmgn(work) {
+  const run = gmgnQueue.then(work, work);
+  gmgnQueue = run.catch(() => {});
+  return run;
+}
+
+function gmgnErrorText(status, payload, fallback) {
+  const raw = String(payload?.raw || payload?.message || payload?.error || fallback || '');
+  if (/<title>\s*Just a moment/i.test(raw) || /challenge-platform|cf_chl/i.test(raw)) {
+    return 'Cloudflare managed challenge';
+  }
+  return `${status || ''} ${payload?.code || ''} ${raw}`.replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
 function appendParams(url, params = {}) {
   for (const [key, value] of Object.entries(params)) {
     if (value == null) continue;
@@ -99,47 +114,49 @@ function appendParams(url, params = {}) {
 }
 
 async function gmgnFetch(pathname, { params = {} } = {}) {
-  const url = new URL(`https://openapi.gmgn.ai${pathname}`);
-  appendParams(url, {
-    ...params,
-    timestamp: Math.floor(now() / 1000),
-    client_id: randomUUID(),
-  });
-  const maxRetries = Math.max(0, Math.floor(numSetting('gmgn_max_retries', 2)));
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    await paceGmgnRequest();
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-APIKEY': GMGN_API_KEY,
-        'Content-Type': 'application/json',
-      },
+  return enqueueGmgn(async () => {
+    const url = new URL(`https://openapi.gmgn.ai${pathname}`);
+    appendParams(url, {
+      ...params,
+      timestamp: Math.floor(now() / 1000),
+      client_id: randomUUID(),
     });
-    const text = await res.text().catch(() => '');
-    let payload = {};
-    try {
-      payload = text ? JSON.parse(text) : {};
-    } catch {
-      payload = { raw: text };
+    const maxRetries = Math.max(0, Math.floor(numSetting('gmgn_max_retries', 2)));
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      await paceGmgnRequest();
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'X-APIKEY': GMGN_API_KEY,
+          'Content-Type': 'application/json',
+        },
+      });
+      const text = await res.text().catch(() => '');
+      let payload = {};
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        payload = { raw: text };
+      }
+      if (res.ok) return payload;
+      const message = gmgnErrorText(res.status, payload, `GMGN ${pathname} ${res.status}`);
+      const rateLimited = res.status === 429 || /rate limit|temporarily banned/i.test(String(message));
+      if (rateLimited && attempt < maxRetries) {
+        const retryAfter = Number(res.headers.get('retry-after'));
+        const backoffMs = Number.isFinite(retryAfter)
+          ? retryAfter * 1000
+          : /temporarily banned/i.test(String(message))
+            ? 60_000
+            : Math.min(30_000, 3000 * 2 ** attempt);
+        await sleep(backoffMs);
+        continue;
+      }
+      const error = new Error(message);
+      error.response = { status: res.status, data: payload, headers: Object.fromEntries(res.headers.entries()) };
+      throw error;
     }
-    if (res.ok) return payload;
-    const message = payload?.message || payload?.error || payload?.raw || `GMGN ${pathname} ${res.status}`;
-    const rateLimited = res.status === 429 || /rate limit|temporarily banned/i.test(String(message));
-    if (rateLimited && attempt < maxRetries) {
-      const retryAfter = Number(res.headers.get('retry-after'));
-      const backoffMs = Number.isFinite(retryAfter)
-        ? retryAfter * 1000
-        : /temporarily banned/i.test(String(message))
-          ? 60_000
-          : Math.min(30_000, 3000 * 2 ** attempt);
-      await sleep(backoffMs);
-      continue;
-    }
-    const error = new Error(message);
-    error.response = { status: res.status, data: payload, headers: Object.fromEntries(res.headers.entries()) };
-    throw error;
-  }
-  throw new Error(`GMGN ${pathname} failed`);
+    throw new Error(`GMGN ${pathname} failed`);
+  });
 }
 
 function gmgnBackoffKey(kind) {
@@ -159,9 +176,10 @@ function setGmgnBackoff(kind, err) {
   if (status !== 403 && status !== 429) return;
   const body = err.response?.data || {};
   const resetAtMs = Number(body.reset_at || 0) * 1000;
-  const fallbackMs = status === 403 ? 10 * 60 * 1000 : 60 * 1000;
+  const challenge = /Cloudflare managed challenge/i.test(String(err.message));
+  const fallbackMs = challenge ? 30 * 60 * 1000 : status === 403 ? 10 * 60 * 1000 : 60 * 1000;
   const until = resetAtMs > now() ? resetAtMs : now() + fallbackMs;
-  const reason = `${status} ${body.code || ''} ${body.message || err.message}`.replace(/\s+/g, ' ').trim();
+  const reason = gmgnErrorText(status, body, err.message);
   gmgnBackoff[gmgnBackoffKey(kind)] = until;
   gmgnBackoff[gmgnReasonKey(kind)] = reason;
   console.log(`[gmgn:${kind}] backing off until ${new Date(until).toISOString()} (${reason})`);
@@ -1721,10 +1739,9 @@ function allPositions(limit = 10) {
 }
 
 async function refreshPosition(position, { autoExit = true } = {}) {
-  const gmgn = await fetchGmgnTokenInfo(position.mint, false);
   const asset = await fetchJupiterAsset(position.mint);
-  const price = firstPositiveNumber(tokenPriceFromGmgn(gmgn), asset?.usdPrice, position.high_water_price, position.entry_price);
-  const mcap = firstPositiveNumber(marketCapFromGmgn(gmgn), asset?.mcap, asset?.fdv, position.high_water_mcap, position.entry_mcap);
+  const price = firstPositiveNumber(asset?.usdPrice, position.high_water_price, position.entry_price);
+  const mcap = firstPositiveNumber(asset?.mcap, asset?.fdv, position.high_water_mcap, position.entry_mcap);
   if (!Number.isFinite(Number(mcap)) || !Number.isFinite(Number(position.entry_mcap)) || Number(position.entry_mcap) <= 0) {
     return null;
   }
@@ -1778,7 +1795,6 @@ async function refreshPosition(position, { autoExit = true } = {}) {
     ...position,
     status: closed ? 'closed' : position.status,
     closed_at_ms: closed ? now() : position.closed_at_ms,
-    gmgn,
     asset,
     price,
     mcap,
