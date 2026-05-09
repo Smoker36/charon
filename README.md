@@ -2,21 +2,14 @@
 
 Charon is a Telegram trench agent for screening noisy Pump-token flow with overlap signals, strategy gates, LLM selection, and dry-run/confirm/live execution.
 
-The recommended setup runs two processes:
-
-- `charon-server`: collects and merges public signals into a private API.
-- `charon`: polls that API, enriches candidates, decides, executes, and manages positions.
-
 ## Flow
 
-1. Signal server collects Jupiter trending, Axiom trending, GMGN trending, Pump graduated, and fee-claim WebSocket events.
-2. Signal server merges by mint and serves overlap candidates from `GET /api/signals`.
-3. Charon polls the signal server every `SIGNAL_POLL_MS`.
-4. The active strategy gates source count, fee requirement, token age, market cap, holders, fees, trend quality, ATH distance, and position caps.
-5. Passing candidates are enriched with GMGN token info, Jupiter asset/holders/chart data, saved-wallet exposure, and fxtwitter narrative.
-6. The LLM screens up to `LLM_CANDIDATE_PICK_COUNT` recent candidates and may pick one `BUY`.
-7. Charon routes approved buys through `dry_run`, `confirm`, or `live`.
-8. Open positions are monitored every `POSITION_CHECK_MS` for TP, SL, trailing TP, max hold, and partial TP rules.
+1. Charon polls a configured signal endpoint every `SIGNAL_POLL_MS`.
+2. The active strategy gates source count, fee requirement, token age, market cap, holders, fees, trend quality, ATH distance, and position caps.
+3. Passing candidates are enriched with token info, Jupiter asset/holders/chart data, saved-wallet exposure, and fxtwitter narrative when available.
+4. The LLM screens up to `LLM_CANDIDATE_PICK_COUNT` recent candidates and may pick one `BUY`.
+5. Charon routes approved buys through `dry_run`, `confirm`, or `live`.
+6. Open positions are monitored every `POSITION_CHECK_MS` for TP, SL, trailing TP, max hold, and partial TP rules.
 
 ## Install
 
@@ -45,13 +38,16 @@ pm2 save
 ```env
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+GMGN_ENABLED=true
 GMGN_API_KEY=
 ```
 
-Use a signal server:
+Set `GMGN_ENABLED=false` to run without GMGN token-info enrichment. Charon will fall back to Jupiter/server data, and the GMGN status line will show `off`.
+
+Signal endpoint:
 
 ```env
-SIGNAL_SERVER_URL=https://api.thecharon.xyz
+SIGNAL_SERVER_URL=
 SIGNAL_SERVER_KEY=
 SIGNAL_POLL_MS=30000
 ```
@@ -163,22 +159,6 @@ Charon uses `charon.sqlite` as source of truth. It stores:
 - learning runs and lessons
 
 Open positions resume monitoring after restart.
-
-## Signal Server Notes
-
-The signal server is separate from this repo in the current VPS layout. It should:
-
-- dedupe fee-claim events by `signature:mint`
-- avoid hardcoded SOL/USD price
-- serve `GET /api/signals` behind `x-api-key`
-- collect signals continuously under PM2
-
-Example Charon client config:
-
-```env
-SIGNAL_SERVER_URL=https://api.thecharon.xyz
-SIGNAL_SERVER_KEY=your-server-key
-```
 
 ## Verification
 

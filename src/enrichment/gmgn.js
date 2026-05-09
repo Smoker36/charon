@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { GMGN_API_KEY, GMGN_CACHE_TTL_MS, JSON_HEADERS } from '../config.js';
+import { GMGN_API_KEY, GMGN_CACHE_TTL_MS, GMGN_ENABLED, JSON_HEADERS } from '../config.js';
 import { now, sleep } from '../utils.js';
 import { numSetting, setting } from '../db/settings.js';
 
@@ -49,6 +49,7 @@ function appendParams(url, params = {}) {
 }
 
 async function gmgnFetch(pathname, { params = {} } = {}) {
+  if (!GMGN_ENABLED) throw new Error('GMGN disabled');
   return enqueueGmgn(async () => {
     const url = new URL(`https://openapi.gmgn.ai${pathname}`);
     appendParams(url, {
@@ -121,6 +122,7 @@ function setGmgnBackoff(kind, err) {
 }
 
 function gmgnStatusText(kind) {
+  if (!GMGN_ENABLED) return 'off';
   const key = gmgnBackoffKey(kind);
   if (!gmgnBackoffActive(kind)) return 'ok';
   const seconds = Math.max(1, Math.ceil((Number(gmgnBackoff[key]) - now()) / 1000));
@@ -141,6 +143,7 @@ function tokenPriceFromGmgn(info) {
 }
 
 async function fetchGmgnTokenInfo(mint, useCache = true) {
+  if (!GMGN_ENABLED) return null;
   const cached = gmgnCache.get(mint);
   if (useCache && cached && now() - cached.at < GMGN_CACHE_TTL_MS) return cached.data;
   if (gmgnBackoffActive('token')) {
