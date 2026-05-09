@@ -29,10 +29,10 @@ export function filtersText() {
   const strat = activeStrategy();
   return [
     `⚙️ <b>Charon Filters</b> (${escapeHtml(strat.name)})`,
-    `Min fee claim: ${fmtSol(strat.min_fee_claim_sol)} SOL`,
+    `Min claim fee: ${fmtSol(strat.min_fee_claim_sol)} SOL`,
     `Min mcap: ${fmtUsd(strat.min_mcap_usd)}`,
     `Max mcap: ${strat.max_mcap_usd > 0 ? fmtUsd(strat.max_mcap_usd) : 'off'}`,
-    `Min fees: ${fmtSol(strat.min_gmgn_total_fee_sol)} SOL`,
+    `Min trading fees: ${fmtSol(strat.min_gmgn_total_fee_sol)} SOL`,
     `Min grad volume: ${fmtUsd(strat.min_graduated_volume_usd)}`,
     `Min holders: ${strat.min_holders || 'off'}`,
     `Max holder: ${strat.max_top20_holder_percent < 100 ? fmtPct(strat.max_top20_holder_percent) : 'off'}`,
@@ -51,10 +51,10 @@ export function filtersText() {
 }
 
 export const numericFilterLabels = {
-  min_fee_claim_sol: 'minimum fee claim SOL',
+  min_fee_claim_sol: 'minimum creator fee-claim SOL',
   min_mcap_usd: 'minimum mcap USD',
   max_mcap_usd: 'maximum mcap USD',
-  min_gmgn_total_fee_sol: 'minimum GMGN fees SOL',
+  min_gmgn_total_fee_sol: 'minimum GMGN total trading fees SOL',
   min_graduated_volume_usd: 'minimum graduated volume USD',
   max_top20_holder_percent: 'maximum holder percent',
   min_saved_wallet_holders: 'minimum saved-wallet holders',
@@ -66,10 +66,10 @@ export const numericFilterLabels = {
 };
 
 export const strategyNumericLabels = {
-  min_fee_claim_sol: 'minimum fee claim SOL',
+  min_fee_claim_sol: 'minimum creator fee-claim SOL',
   min_mcap_usd: 'minimum mcap USD',
   max_mcap_usd: 'maximum mcap USD',
-  min_gmgn_total_fee_sol: 'minimum GMGN fees SOL',
+  min_gmgn_total_fee_sol: 'minimum GMGN total trading fees SOL',
   min_graduated_volume_usd: 'minimum graduated volume USD',
   min_holders: 'minimum holders',
   max_top20_holder_percent: 'maximum top holder percent',
@@ -252,8 +252,8 @@ export function strategyKeyboard() {
       { text: `Max Hold ${strat.max_hold_ms > 0 ? Math.round(strat.max_hold_ms/60000)+'m' : 'off'}`, callback_data: 'stratinput:max_hold_ms' },
     ],
     [
-      { text: `Fee ${fmtSol(strat.min_fee_claim_sol)} SOL`, callback_data: 'stratinput:min_fee_claim_sol' },
-      { text: `Fees ${fmtSol(strat.min_gmgn_total_fee_sol)} SOL`, callback_data: 'stratinput:min_gmgn_total_fee_sol' },
+      { text: `Claim Fee ${fmtSol(strat.min_fee_claim_sol)} SOL`, callback_data: 'stratinput:min_fee_claim_sol' },
+      { text: `Trading Fees ${fmtSol(strat.min_gmgn_total_fee_sol)} SOL`, callback_data: 'stratinput:min_gmgn_total_fee_sol' },
     ],
     [
       { text: `Grad Vol ${fmtUsd(strat.min_graduated_volume_usd)}`, callback_data: 'stratinput:min_graduated_volume_usd' },
