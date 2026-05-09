@@ -169,3 +169,9 @@ npm run check
 ## Config Reloading
 
 SQLite/menu settings are hot-read by the bot. API keys, wallet key, RPC URLs, Jupiter base URL, and polling intervals are `.env` values and require restart.
+
+## Notes
+
+- Live execution uses `@solana/web3.js` v1 (legacy SDK). It works, but a future version may migrate to `@solana/kit`.
+- Strategies with `use_llm: false` (e.g. `degen`) skip LLM entirely and auto-approve any candidate that passes filters.
+- The position monitor sends a Telegram alert after 3 consecutive failures on any polling loop.

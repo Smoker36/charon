@@ -62,12 +62,15 @@ export function logDecisionEvent({
   execution = {},
 }) {
   const selectedCandidate = selectedRow?.candidate || null;
+  const strategyId = selectedCandidate?.filters?.strategy
+    || rows.find(row => row?.candidate?.filters?.strategy)?.candidate?.filters?.strategy
+    || null;
   db.prepare(`
     INSERT INTO decision_logs (
       at_ms, batch_id, trigger_candidate_id, selected_candidate_id, selected_mint,
       mode, action, verdict, confidence, reason, guardrails_json, token_json,
-      candidate_json, batch_json, execution_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      candidate_json, batch_json, execution_json, strategy_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     now(),
     batchId,
@@ -108,5 +111,6 @@ export function logDecisionEvent({
       };
     })),
     json(execution),
+    strategyId,
   );
 }

@@ -142,3 +142,20 @@ export function formatWindow(ms) {
   if (ms % (60 * 60_000) === 0) return `${ms / (60 * 60_000)}h`;
   return `${Math.round(ms / 60_000)}m`;
 }
+
+export function makeFailureTracker(name, alertFn, threshold = 3) {
+  let count = 0;
+  return async (fn) => {
+    try {
+      await fn();
+      count = 0;
+    } catch (err) {
+      count++;
+      console.log(`[${name}] ${err.message}`);
+      if (count >= threshold) {
+        alertFn(`⚠️ <b>${name}</b> failed ${count}x in a row: ${err.message}`).catch(() => {});
+        count = 0;
+      }
+    }
+  };
+}
