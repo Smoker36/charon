@@ -217,6 +217,10 @@ export function filterCandidate(candidate) {
     failures.push('dex paid: required but token is not flagged as paid');
   }
 
+  if (dexPaidEnabled && !candidate.metrics.dexPaid) {
+    failures.push('dex paid: required but token is not flagged as paid');
+  }
+
   return { passed: failures.length === 0, failures, strategy: strat.id };
 }
 
