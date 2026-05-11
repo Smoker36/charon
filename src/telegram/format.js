@@ -1,4 +1,5 @@
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short, gmgnLink, txLink, accountLink } from '../format.js';
+import { now } from '../utils.js';
 
 export function formatRecipients(shareholders) {
   if (!shareholders?.length) return '';
@@ -96,6 +97,23 @@ export function batchRevealSummary(batchId, rows, decision, triggerCandidateId =
   return lines.filter(Boolean).join('\n');
 }
 
+function formatHoldTime(position) {
+  const openedAt = Number(position.opened_at_ms || 0);
+  if (!Number.isFinite(openedAt) || openedAt <= 0) return 'unknown';
+  const endedAt = position.status === 'closed' && Number(position.closed_at_ms || 0) > 0
+    ? Number(position.closed_at_ms)
+    : now();
+  const totalSeconds = Math.max(0, Math.floor((endedAt - openedAt) / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 export function formatPosition(position) {
   const pnl = position.pnl_percent != null
     ? Number(position.pnl_percent)
@@ -106,6 +124,7 @@ export function formatPosition(position) {
     `📍 <b>${escapeHtml(position.symbol || short(position.mint))}</b> #${position.id}`,
     `Token: <a href="${gmgnLink(position.mint)}">${short(position.mint)}</a>`,
     `Status: <b>${escapeHtml(position.status)}</b> · Mode: <b>${escapeHtml(position.execution_mode || 'dry_run')}</b> · Strategy: <b>${escapeHtml(position.strategy_id || 'sniper')}</b>`,
+    `Hold: <b>${escapeHtml(formatHoldTime(position))}</b>`,
     position.entry_signature ? `Entry TX: <a href="${txLink(position.entry_signature)}">${short(position.entry_signature)}</a>` : null,
     `Entry mcap: ${fmtUsd(position.entry_mcap)} · High: ${fmtUsd(position.high_water_mcap)}`,
     `Size: ${fmtSol(position.size_sol)} SOL · PnL: ${fmtPct(pnl)}`,

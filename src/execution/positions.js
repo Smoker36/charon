@@ -122,22 +122,30 @@ export async function refreshPosition(position, { autoExit = true, jupiterPnl = 
     pnlPercent = Number(jupiterPnl.totalPnlPercentageNative);
     pnlSol = Number.isFinite(Number(jupiterPnl.totalPnlNative)) ? Number(jupiterPnl.totalPnlNative) : pnlSol;
   }
-  const tpHit = pnlPercent >= Number(position.tp_percent);
+  const strat = strategyById(position.strategy_id);
+  const profitLockEnabled = Boolean(strat?.profit_lock_enabled);
+  const tpHit = !profitLockEnabled && pnlPercent >= Number(position.tp_percent);
   const slHit = pnlPercent <= Number(position.sl_percent);
-  const trailingArmed = position.trailing_armed || (position.trailing_enabled && tpHit);
+  const trailingArmed = position.trailing_armed || (!profitLockEnabled && position.trailing_enabled && tpHit);
   const trailDrop = highWaterMcap > 0 ? (Number(mcap) / highWaterMcap - 1) * 100 : 0;
-  const trailingHit = trailingArmed && position.trailing_enabled && trailDrop <= -Math.abs(Number(position.trailing_percent));
+  const trailingHit = !profitLockEnabled && trailingArmed && position.trailing_enabled && trailDrop <= -Math.abs(Number(position.trailing_percent));
   let exitReason = null;
   let closed = false;
 
   // Max hold time check
-  const strat = strategyById(position.strategy_id);
   const highPnlPercent = (highWaterMcap / Number(position.entry_mcap) - 1) * 100;
   let profitLockFloor = null;
-  if (strat?.id === 'profit_lock') {
-    if (highPnlPercent >= 80) profitLockFloor = Math.max(50, highPnlPercent - 30);
-    else if (highPnlPercent >= 40) profitLockFloor = 20;
-    else if (highPnlPercent >= 15) profitLockFloor = 5;
+  if (profitLockEnabled) {
+    const trigger1 = Number(strat.profit_lock_trigger_1_percent ?? 15);
+    const floor1 = Number(strat.profit_lock_floor_1_percent ?? 5);
+    const trigger2 = Number(strat.profit_lock_trigger_2_percent ?? 40);
+    const floor2 = Number(strat.profit_lock_floor_2_percent ?? 20);
+    const trigger3 = Number(strat.profit_lock_trigger_3_percent ?? 80);
+    const floor3 = Number(strat.profit_lock_floor_3_percent ?? 50);
+    const dynamicDrawdown = Number(strat.profit_lock_dynamic_drawdown_percent ?? 30);
+    if (highPnlPercent >= trigger3) profitLockFloor = Math.max(floor3, highPnlPercent - dynamicDrawdown);
+    else if (highPnlPercent >= trigger2) profitLockFloor = floor2;
+    else if (highPnlPercent >= trigger1) profitLockFloor = floor1;
   }
   if (strat?.max_hold_ms > 0 && (now() - position.opened_at_ms) >= strat.max_hold_ms) {
     exitReason = 'MAX_HOLD';

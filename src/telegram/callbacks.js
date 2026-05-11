@@ -12,6 +12,7 @@ import {
   mainMenuText,
   walletsText,
   positionsText,
+  positionsKeyboard,
   candidateButtons,
   sendTpSlDefaults,
   strategyMenuText,
@@ -23,7 +24,7 @@ import { candidateById, updateCandidateStatus } from '../db/candidates.js';
 import { storeDecision, logDecisionEvent } from '../db/decisions.js';
 import { createDryRunPosition, canOpenMorePositions, openPositionCount, tradingMode } from '../db/positions.js';
 import { executeLiveBuy, executeConfirmedIntent, rejectIntent } from '../execution/router.js';
-import { sendCandidate, sendPosition, closePosition, updatePositionRule, toggleTrailing } from './commands.js';
+import { sendCandidate, sendPosition, closePosition, updatePositionRule, toggleTrailing, sendPnl } from './commands.js';
 import { requestNumericFilterInput, requestStrategyNumericInput } from './input.js';
 
 export async function handleCallback(query) {
@@ -52,11 +53,11 @@ export async function handleCallback(query) {
   if (data === 'menu:filters') return editMenuMessage(query, filtersText(), filtersKeyboard());
   if (data === 'menu:strategy') return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
   if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
-  if (data === 'menu:positions') return editMenuMessage(query, positionsText(), navKeyboard());
-  if (data === 'menu:pnl') {
-    const { sendPnl } = await import('./send.js');
-    return sendPnl(chatId, query);
+  if (data.startsWith('menu:positions')) {
+    const showInactive = data !== 'menu:positions:hide_inactive';
+    return editMenuMessage(query, positionsText({ showInactive }), positionsKeyboard({ showInactive }));
   }
+  if (data === 'menu:pnl') return sendPnl(chatId, query);
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
       { text: 'Agent', callback_data: 'menu:agent' },
@@ -196,9 +197,14 @@ async function handleStratConfig(query, chatId, key) {
   delete newConfig.name;
 
   // Boolean toggles
-  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim']);
+  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim', 'profit_lock_enabled']);
   if (boolKeys.has(key)) {
     newConfig[key] = !strat[key];
+    if (key === 'profit_lock_enabled' && newConfig[key]) {
+      newConfig.tp_percent = 999999;
+      newConfig.sl_percent = -20;
+      newConfig.trailing_enabled = false;
+    }
     updateStrategyConfig(strat.id, newConfig);
     return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
   }
