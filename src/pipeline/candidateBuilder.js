@@ -1,5 +1,5 @@
 import { now, firstPositiveNumber, marketCapFromGmgn, tokenPriceFromGmgn, lamToSol } from '../utils.js';
-import { activeStrategy } from '../db/settings.js';
+import { activeStrategy, numSetting } from '../db/settings.js';
 import { fetchGmgnTokenInfo } from '../enrichment/gmgn.js';
 import { fetchJupiterAsset, fetchJupiterHolders, fetchJupiterChartContext } from '../enrichment/jupiter.js';
 import { fetchSavedWalletExposure } from '../enrichment/wallets.js';
@@ -65,10 +65,11 @@ export function filterCandidate(candidate) {
   if (strat.min_gmgn_total_fee_sol > 0 && candidate.gmgn !== null && totalFees < strat.min_gmgn_total_fee_sol) {
     failures.push(`GMGN total fees: ${totalFees} < ${strat.min_gmgn_total_fee_sol}`);
   }
-  if (strat.fee_mcap_divisor > 0 && candidate.gmgn !== null && Number.isFinite(mcap) && mcap > 0) {
-    const requiredFee = mcap / strat.fee_mcap_divisor;
+  const feeMcapDivisor = numSetting('fee_mcap_divisor', 0);
+  if (feeMcapDivisor > 0 && candidate.gmgn !== null && Number.isFinite(mcap) && mcap > 0) {
+    const requiredFee = mcap / feeMcapDivisor;
     if (totalFees < requiredFee) {
-      failures.push(`fee/mcap: ${totalFees.toFixed(2)} < required ${requiredFee.toFixed(2)} (mcap/${strat.fee_mcap_divisor})`);
+      failures.push(`fee/mcap: ${totalFees.toFixed(2)} < required ${requiredFee.toFixed(2)} (mcap/${feeMcapDivisor})`);
     }
   }
 
@@ -99,9 +100,10 @@ export function filterCandidate(candidate) {
       failures.push(`ATH distance: ${athDist.toFixed(0)}% > target ${strat.max_ath_distance_pct}%`);
     }
   }
-  if (strat.migrated_buy_max_ath_distance_pct < 0 && candidate.graduation) {
-    if (Number.isFinite(chartAthDistance) && chartAthDistance > strat.migrated_buy_max_ath_distance_pct) {
-      failures.push(`migrated dump-buy: ATH distance ${chartAthDistance.toFixed(0)}% > target ${strat.migrated_buy_max_ath_distance_pct}%`);
+  const migratedBuyMaxAthDistance = numSetting('migrated_buy_max_ath_distance_pct', 0);
+  if (migratedBuyMaxAthDistance < 0 && candidate.graduation) {
+    if (Number.isFinite(chartAthDistance) && chartAthDistance > migratedBuyMaxAthDistance) {
+      failures.push(`migrated dump-buy: ATH distance ${chartAthDistance.toFixed(0)}% > target ${migratedBuyMaxAthDistance}%`);
     }
   }
 
@@ -109,10 +111,11 @@ export function filterCandidate(candidate) {
     Number(candidate.metrics.trendingVolumeUsd || 0),
     Number(candidate.metrics.graduatedVolumeUsd || 0),
   );
-  if (strat.volume_to_mcap_min_ratio > 0 && Number.isFinite(mcap) && mcap > 0) {
+  const volumeToMcapMinRatio = numSetting('volume_to_mcap_min_ratio', 0);
+  if (volumeToMcapMinRatio > 0 && Number.isFinite(mcap) && mcap > 0) {
     const ratio = bestVolumeUsd / mcap;
-    if (!Number.isFinite(ratio) || ratio < strat.volume_to_mcap_min_ratio) {
-      failures.push(`volume/mcap ratio: ${ratio.toFixed(2)} < ${strat.volume_to_mcap_min_ratio}`);
+    if (!Number.isFinite(ratio) || ratio < volumeToMcapMinRatio) {
+      failures.push(`volume/mcap ratio: ${ratio.toFixed(2)} < ${volumeToMcapMinRatio}`);
     }
   }
 
