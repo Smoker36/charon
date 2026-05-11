@@ -240,6 +240,9 @@ export function initDb() {
     trending_min_swaps: process.env.TRENDING_MIN_SWAPS || '0',
     trending_max_rug_ratio: process.env.TRENDING_MAX_RUG_RATIO || '0.3',
     trending_max_bundler_rate: process.env.TRENDING_MAX_BUNDLER_RATE || '0.5',
+    fee_mcap_divisor: process.env.FEE_MCAP_DIVISOR || '0',
+    migrated_buy_max_ath_distance_pct: process.env.MIGRATED_BUY_MAX_ATH_DISTANCE_PCT || '0',
+    volume_to_mcap_min_ratio: process.env.VOLUME_TO_MCAP_MIN_RATIO || '0',
   };
   const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [key, value] of Object.entries(defaults)) insert.run(key, value);
@@ -374,6 +377,38 @@ export function initDb() {
     max_hold_ms: 0,
     use_llm: false,
     llm_min_confidence: 0,
+  }), ts);
+
+  stratInsert.run('profit_lock', 'Profit Lock', 0, JSON.stringify({
+    entry_mode: 'immediate',
+    min_source_count: 2,
+    require_fee_claim: true,
+    token_age_max_ms: 3600000,
+    min_mcap_usd: 7000,
+    max_mcap_usd: 300000,
+    min_fee_claim_sol: 0.5,
+    min_gmgn_total_fee_sol: 10,
+    min_holders: 0,
+    max_top20_holder_percent: 100,
+    min_saved_wallet_holders: 0,
+    max_ath_distance_pct: 0,
+    min_graduated_volume_usd: 0,
+    trending_min_volume_usd: 0,
+    trending_min_swaps: 0,
+    trending_max_rug_ratio: 0.3,
+    trending_max_bundler_rate: 0.5,
+    position_size_sol: 0.1,
+    max_open_positions: 3,
+    tp_percent: 999999,
+    sl_percent: -20,
+    trailing_enabled: false,
+    trailing_percent: 0,
+    partial_tp: false,
+    partial_tp_at_percent: 0,
+    partial_tp_sell_percent: 0,
+    max_hold_ms: 0,
+    use_llm: true,
+    llm_min_confidence: 60,
   }), ts);
 }
 
