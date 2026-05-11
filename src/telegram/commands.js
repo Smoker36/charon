@@ -44,7 +44,7 @@ export async function handleMessage(msg) {
     if (!id) {
       return bot.sendMessage(chatId, strategyMenuText(), { parse_mode: 'HTML', ...strategyKeyboard() });
     }
-    const valid = ['sniper', 'dip_buy', 'smart_money', 'degen'];
+    const valid = ['sniper', 'dip_buy', 'smart_money', 'degen', 'profit_lock'];
     if (!valid.includes(id)) {
       return bot.sendMessage(chatId, `Unknown strategy. Valid: ${valid.join(', ')}`);
     }
@@ -56,11 +56,11 @@ export async function handleMessage(msg) {
     const [, id, key, ...rest] = parts;
     const value = rest.join(' ');
     if (!id || !key || !value) {
-      return bot.sendMessage(chatId, 'Usage: /stratset <strategy_id> <key> <value>\n\nExample: /stratset sniper tp_percent 75\n\nKeys: tp_percent, sl_percent, position_size_sol, max_open_positions, min_mcap_usd, max_mcap_usd, min_holders, trailing_enabled, trailing_percent, partial_tp, partial_tp_at_percent, partial_tp_sell_percent, max_hold_ms, use_llm, llm_min_confidence, min_source_count, require_fee_claim, min_fee_claim_sol, min_gmgn_total_fee_sol, max_ath_distance_pct');
+      return bot.sendMessage(chatId, 'Usage: /stratset <strategy_id> <key> <value>\n\nExample: /stratset sniper tp_percent 75\n\nKeys: tp_percent, sl_percent, position_size_sol, max_open_positions, min_mcap_usd, max_mcap_usd, min_holders, trailing_enabled, trailing_percent, partial_tp, partial_tp_at_percent, partial_tp_sell_percent, max_hold_ms, use_llm, llm_min_confidence, min_source_count, require_fee_claim, min_fee_claim_sol, min_gmgn_total_fee_sol, max_ath_distance_pct, fee_mcap_divisor, migrated_buy_max_ath_distance_pct, volume_to_mcap_min_ratio');
     }
     const strat = strategyById(id);
     if (!strat) return bot.sendMessage(chatId, `Strategy "${id}" not found.`);
-    const numKeys = new Set(['tp_percent', 'sl_percent', 'position_size_sol', 'max_open_positions', 'min_mcap_usd', 'max_mcap_usd', 'min_holders', 'max_top20_holder_percent', 'trailing_percent', 'partial_tp_at_percent', 'partial_tp_sell_percent', 'max_hold_ms', 'llm_min_confidence', 'min_source_count', 'min_fee_claim_sol', 'min_gmgn_total_fee_sol', 'max_ath_distance_pct', 'token_age_max_ms', 'trending_min_volume_usd', 'trending_min_swaps', 'trending_max_rug_ratio', 'trending_max_bundler_rate', 'min_saved_wallet_holders', 'min_graduated_volume_usd']);
+    const numKeys = new Set(['tp_percent', 'sl_percent', 'position_size_sol', 'max_open_positions', 'min_mcap_usd', 'max_mcap_usd', 'min_holders', 'max_top20_holder_percent', 'trailing_percent', 'partial_tp_at_percent', 'partial_tp_sell_percent', 'max_hold_ms', 'llm_min_confidence', 'min_source_count', 'min_fee_claim_sol', 'min_gmgn_total_fee_sol', 'max_ath_distance_pct', 'token_age_max_ms', 'trending_min_volume_usd', 'trending_min_swaps', 'trending_max_rug_ratio', 'trending_max_bundler_rate', 'min_saved_wallet_holders', 'min_graduated_volume_usd', 'fee_mcap_divisor', 'migrated_buy_max_ath_distance_pct', 'volume_to_mcap_min_ratio']);
     const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim']);
     const newConfig = { ...strat };
     delete newConfig.id;
@@ -269,26 +269,59 @@ async function sendMenu(chatId = TELEGRAM_CHAT_ID) {
 }
 
 async function sendPnl(chatId, query = null) {
+  const modeLines = [
+    summarizeModePnl('dry_run', 'Dry-run Trade'),
+    summarizeModePnl('live', 'Live Trade'),
+  ];
+
   const wallets = savedWallets();
-  if (!wallets.length) {
-    const text = '📊 <b>PnL</b>\n\nNo saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt;.';
-    return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
-  }
+  const walletLines = [];
   const chunks = [];
-  for (const wallet of wallets) {
-    const pnl = await fetchWalletPnl(wallet.address).catch(() => null);
-    if (!pnl) {
-      chunks.push(`• <b>${escapeHtml(wallet.label)}</b>: no data`);
-      continue;
+  if (wallets.length) {
+    for (const wallet of wallets) {
+      const pnl = await fetchWalletPnl(wallet.address).catch(() => null);
+      if (!pnl) {
+        chunks.push(`• <b>${escapeHtml(wallet.label)}</b>: no data`);
+        continue;
+      }
+      chunks.push([
+        `• <b>${escapeHtml(wallet.label)}</b>`,
+        `Win: ${fmtPct(pnl.winRate)} · PnL: ${fmtPct(pnl.totalPnlPercent)}`,
+        `Trades: ${pnl.totalTrades} · Wins: ${pnl.wins}`,
+      ].join('\n'));
     }
-    chunks.push([
-      `• <b>${escapeHtml(wallet.label)}</b>`,
-      `Win: ${fmtPct(pnl.winRate)} · PnL: ${fmtPct(pnl.totalPnlPercent)}`,
-      `Trades: ${pnl.totalTrades} · Wins: ${pnl.wins}`,
-    ].join('\n'));
+    walletLines.push(`<b>Wallet PnL</b>\n${chunks.join('\n\n')}`);
   }
-  const text = `📊 <b>PnL</b>\n\n${chunks.join('\n\n')}`;
+  const text = `📊 <b>PnL</b>\n\n${modeLines.join('\n\n')}${walletLines.length ? `\n\n${walletLines.join('\n\n')}` : ''}`;
   return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+}
+
+function summarizeModePnl(mode, title) {
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) AS total_positions,
+      SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open_positions,
+      SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS closed_positions,
+      SUM(CASE WHEN status = 'closed' AND COALESCE(pnl_percent, 0) > 0 THEN 1 ELSE 0 END) AS wins,
+      SUM(CASE WHEN status = 'closed' THEN COALESCE(pnl_percent, 0) ELSE 0 END) AS total_pnl_percent,
+      SUM(CASE WHEN status = 'closed' THEN COALESCE(pnl_sol, 0) ELSE 0 END) AS total_pnl_sol
+    FROM dry_run_positions
+    WHERE COALESCE(execution_mode, 'dry_run') = ?
+  `).get(mode);
+
+  const closed = Number(row?.closed_positions || 0);
+  const wins = Number(row?.wins || 0);
+  const winRate = closed > 0 ? (wins / closed) * 100 : 0;
+  const avgPnl = closed > 0 ? Number(row?.total_pnl_percent || 0) / closed : 0;
+  const totalPnlSol = Number(row?.total_pnl_sol || 0);
+  const sign = totalPnlSol > 0 ? '+' : '';
+
+  return [
+    `<b>${title}</b>`,
+    `Positions: ${Number(row?.total_positions || 0)} · Open: ${Number(row?.open_positions || 0)} · Closed: ${closed}`,
+    `Win: ${wins}/${closed} (${fmtPct(winRate)})`,
+    `Avg closed PnL: ${fmtPct(avgPnl)} · Total closed PnL: <b>${sign}${totalPnlSol.toFixed(4)} SOL</b>`,
+  ].join('\n');
 }
 
 function parseSetFilter(text) {

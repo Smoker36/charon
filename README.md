@@ -138,7 +138,11 @@ Use `/menu → Strategy` or commands:
 /strategy dip_buy
 /strategy smart_money
 /strategy degen
+/strategy profit_lock
 /stratset sniper tp_percent 75
+/stratset sniper fee_mcap_divisor 5
+/stratset sniper migrated_buy_max_ath_distance_pct -40
+/stratset sniper volume_to_mcap_min_ratio 10
 ```
 
 Default strategies:
@@ -147,8 +151,17 @@ Default strategies:
 - `dip_buy`: waits for ATH-distance dip alerts.
 - `smart_money`: stricter holder/trending quality, partial TP support.
 - `degen`: lower source threshold, rule-based (no LLM).
+- `profit_lock`: no fixed TP (`TP` effectively unlimited), initial SL `-20%`, and staged profit locks:
+  - high PnL `>= +15%` locks floor at `+5%`
+  - high PnL `>= +40%` locks floor at `+20%`
+  - high PnL `>= +80%` locks floor at `max(+50%, highPnL - 30%)`
 
 Strategy settings are stored in SQLite and hot-read. Menu changes apply without restart.
+
+Additional optional filter knobs:
+- `fee_mcap_divisor`: require `gmgnTotalFees >= marketCap / fee_mcap_divisor` (set `0` to disable).
+- `migrated_buy_max_ath_distance_pct`: for migrated/graduated coins only, require ATH distance to be at/below this negative threshold (e.g. `-40`).
+- `volume_to_mcap_min_ratio`: require `max(trendingVolumeUsd, graduatedVolumeUsd) / marketCapUsd >= ratio`.
 
 ## Telegram Commands
 
