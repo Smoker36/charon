@@ -47,7 +47,7 @@ export async function handleCallback(query) {
     setSetting('agent_enabled', boolSetting('agent_enabled', true) ? 'false' : 'true');
     return editMenuMessage(query, agentText(), agentKeyboard());
   }
-  if (data === 'toggle:trending_enabled' || data === 'toggle:trending_allow_degen') {
+  if (data === 'toggle:trending_enabled' || data === 'toggle:trending_allow_degen' || data === 'toggle:dex_paid') {
     const key = data.replace('toggle:', '');
     setSetting(key, boolSetting(key, key === 'trending_enabled') ? 'false' : 'true');
     return editMenuMessage(query, filtersText(), filtersKeyboard());

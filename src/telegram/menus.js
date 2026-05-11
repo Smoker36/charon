@@ -56,6 +56,9 @@ export function menuKeyboard() {
         [
           { text: 'Learning', callback_data: 'menu:learn' },
         ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
       ],
     },
   };
@@ -79,6 +82,7 @@ export function filtersText() {
     `Fee required: ${strat.require_fee_claim ? 'yes' : 'no'}`,
     '',
     `Trending: <b>${boolSetting('trending_enabled', true) ? 'on' : 'off'}</b> · Source: <b>${escapeHtml(setting('trending_source', 'jupiter'))}</b>`,
+    `Dex Paid: <b>${boolSetting('dex_paid', false) ? 'on' : 'off'}</b>`,
     `GMGN status: token-info ${escapeHtml(gmgnStatusText('token'))} · trending ${escapeHtml(gmgnStatusText('trending'))}`,
     `Trending interval: ${escapeHtml(setting('trending_interval', '5m'))} · Limit: ${numSetting('trending_limit', 100)}`,
     `Min trend volume: ${fmtUsd(strat.trending_min_volume_usd)} · Min swaps: ${strat.trending_min_swaps}`,
@@ -142,6 +146,9 @@ export function filtersKeyboard() {
         [{ text: 'Configure in Strategy', callback_data: 'menu:strategy' }],
         [
           { text: 'Trend On/Off', callback_data: 'toggle:trending_enabled' },
+          { text: 'Dex Paid On/Off', callback_data: 'toggle:dex_paid' },
+        ],
+        [
           { text: 'Use Jupiter', callback_data: 'set:trending_source:jupiter' },
           { text: 'Use GMGN', callback_data: 'set:trending_source:gmgn' },
         ],
