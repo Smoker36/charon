@@ -146,6 +146,8 @@ export const strategyNumericLabels = {
   profit_lock_trigger_3_percent: 'profit-lock dynamic trigger percent',
   profit_lock_floor_3_percent: 'profit-lock minimum floor after dynamic trigger',
   profit_lock_dynamic_drawdown_percent: 'profit-lock dynamic drawdown from high PnL',
+  min_holder_growth_pct: 'minimum holder growth percent',
+  min_buy_sell_ratio: 'minimum buy/sell ratio',
 };
 
 export function filtersKeyboard() {
@@ -327,6 +329,8 @@ export function strategyMenuText() {
     `Trailing: ${strat.profit_lock_enabled ? 'ignored' : strat.trailing_enabled ? fmtPct(strat.trailing_percent) : 'off'}`,
     `Max positions: ${strat.max_open_positions}`,
     strat.min_holders > 0 ? `Min holders: ${strat.min_holders}` : null,
+    strat.min_holder_growth_pct > 0 ? `Min holder growth: ${strat.min_holder_growth_pct}%` : null,
+    strat.min_buy_sell_ratio > 0 ? `Min buy/sell ratio: ${strat.min_buy_sell_ratio}` : null,
     strat.max_ath_distance_pct < 0 ? `Max ATH distance: ${strat.max_ath_distance_pct}%` : null,
     strat.partial_tp ? `Partial TP: ${strat.partial_tp_sell_percent}% at ${fmtPct(strat.partial_tp_at_percent)}` : null,
     strat.profit_lock_enabled ? `Profit lock: ${fmtPct(strat.profit_lock_trigger_1_percent)}→${fmtPct(strat.profit_lock_floor_1_percent)}, ${fmtPct(strat.profit_lock_trigger_2_percent)}→${fmtPct(strat.profit_lock_floor_2_percent)}, ${fmtPct(strat.profit_lock_trigger_3_percent)}→max(${fmtPct(strat.profit_lock_floor_3_percent)}, high-${fmtPct(strat.profit_lock_dynamic_drawdown_percent)})` : 'Profit lock: off',
@@ -409,6 +413,10 @@ export function strategyKeyboard() {
     [
       { text: `Trend Swaps ${strat.trending_min_swaps}`, callback_data: 'stratinput:trending_min_swaps' },
       { text: `Max Rug ${fmtPct(strat.trending_max_rug_ratio * 100)}`, callback_data: 'stratinput:trending_max_rug_ratio' },
+    ],
+    [
+      { text: `Min Holder Growth ${strat.min_holder_growth_pct ? `${strat.min_holder_growth_pct}%` : 'off'}`, callback_data: 'stratinput:min_holder_growth_pct' },
+      { text: `Min B/S Ratio ${strat.min_buy_sell_ratio || 'off'}`, callback_data: 'stratinput:min_buy_sell_ratio' },
     ],
     [
       { text: `Max Bundler ${fmtPct(strat.trending_max_bundler_rate * 100)}`, callback_data: 'stratinput:trending_max_bundler_rate' },

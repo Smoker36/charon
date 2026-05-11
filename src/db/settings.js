@@ -35,6 +35,8 @@ export function normalizeStrategyConfig(id, name, config = {}) {
     profit_lock_trigger_3_percent: Number(config.profit_lock_trigger_3_percent ?? 80),
     profit_lock_floor_3_percent: Number(config.profit_lock_floor_3_percent ?? 50),
     profit_lock_dynamic_drawdown_percent: Number(config.profit_lock_dynamic_drawdown_percent ?? 30),
+    min_holder_growth_pct: Number(config.min_holder_growth_pct ?? config.min_holder_growth ?? 0),
+    min_buy_sell_ratio: Number(config.min_buy_sell_ratio ?? 0),
     id,
     name,
   };
@@ -98,6 +100,7 @@ function defaultStrategy() {
     max_top20_holder_percent: 100, min_saved_wallet_holders: 0, max_ath_distance_pct: 0,
     min_graduated_volume_usd: 0, trending_min_volume_usd: 0, trending_min_swaps: 0,
     trending_max_rug_ratio: 0.3, trending_max_bundler_rate: 0.5,
+    min_holder_growth_pct: 0, min_buy_sell_ratio: 0,
     fee_mcap_divisor: 0, migrated_buy_max_ath_distance_pct: 0, volume_to_mcap_min_ratio: 0,
     position_size_sol: 0.1, max_open_positions: 3,
     tp_percent: 50, sl_percent: -25, trailing_enabled: true, trailing_percent: 20,

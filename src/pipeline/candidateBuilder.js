@@ -26,6 +26,41 @@ function detectDexPaid({ gmgn, graduatedCoin, trendingToken, jupiterAsset }) {
   return false;
 }
 
+function deriveTokenAgeMs({ gmgn, graduatedCoin, trendingToken, jupiterAsset }) {
+  const directAge = Number(firstPositiveNumber(
+    trendingToken?.ageMs,
+    trendingToken?.age_ms,
+    graduatedCoin?.ageMs,
+    graduatedCoin?.age_ms,
+    gmgn?.age_ms,
+    gmgn?.token_age_ms,
+  ) || 0);
+  if (directAge > 0) return directAge;
+
+  const createdAtRaw = firstPositiveNumber(
+    trendingToken?.createdAtMs,
+    graduatedCoin?.createdAtMs,
+    gmgn?.created_at_ms,
+    gmgn?.open_timestamp,
+    gmgn?.created_at,
+    graduatedCoin?.createdAt,
+    trendingToken?.created_at,
+    jupiterAsset?.createdAt,
+  );
+  if (!createdAtRaw) return 0;
+  const tsMs = createdAtRaw < 1e12 ? createdAtRaw * 1000 : createdAtRaw;
+  const age = now() - tsMs;
+  return age > 0 ? age : 0;
+}
+
+function normalizeHolderGrowthPercent(value) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return 0;
+  // Some sources send ratio (0.15), others send percent (15)
+  if (n > 0 && n <= 1) return n * 100;
+  return n;
+}
+
 export function buildFeeSnapshot(fee, signature) {
   return {
     mint: fee.mint,
@@ -61,6 +96,10 @@ export function filterCandidate(candidate) {
   const trendingSwaps = Number(candidate.trending?.swaps ?? 0);
   const rugRatio = Number(candidate.trending?.rug_ratio ?? 0);
   const bundlerRate = Number(candidate.trending?.bundler_rate ?? 0);
+  const holderGrowth = normalizeHolderGrowthPercent(
+    candidate.trending?.holder_growth ?? candidate.trending?.holders_growth ?? 0,
+  );
+  const buySellRatio = Number(candidate.metrics.buySellRatio || 0);
   const chartAthDistance = Number(candidate.chart?.distanceFromAthPercent);
   const dexPaidEnabled = boolSetting('dex_paid', false);
   const tokenAgeMs = Number(candidate.metrics.tokenAgeMs || 0);
@@ -116,8 +155,12 @@ export function filterCandidate(candidate) {
   }
 
   // ATH distance (dip buy strategy)
-  if (strat.token_age_max_ms > 0 && tokenAgeMs > 0 && tokenAgeMs > strat.token_age_max_ms) {
-    failures.push(`token age: ${(tokenAgeMs / 60000).toFixed(1)}m > ${(strat.token_age_max_ms / 60000).toFixed(1)}m`);
+  if (strat.token_age_max_ms > 0) {
+    if (tokenAgeMs <= 0) {
+      failures.push('token age: unavailable while age filter is enabled');
+    } else if (tokenAgeMs > strat.token_age_max_ms) {
+      failures.push(`token age: ${(tokenAgeMs / 60000).toFixed(1)}m > ${(strat.token_age_max_ms / 60000).toFixed(1)}m`);
+    }
   }
 
   if (strat.max_ath_distance_pct < 0) {
@@ -162,6 +205,16 @@ export function filterCandidate(candidate) {
     if (candidate.trending.is_wash_trading === true || candidate.trending.is_wash_trading === 1) {
       failures.push('trending wash trading');
     }
+    if (strat.min_holder_growth_pct > 0 && holderGrowth < strat.min_holder_growth_pct) {
+      failures.push(`holder growth: ${holderGrowth}% < ${strat.min_holder_growth_pct}%`);
+    }
+    if (strat.min_buy_sell_ratio > 0 && buySellRatio < strat.min_buy_sell_ratio) {
+      failures.push(`buy/sell ratio: ${buySellRatio.toFixed(2)} < ${strat.min_buy_sell_ratio}`);
+    }
+  }
+
+  if (dexPaidEnabled && !candidate.metrics.dexPaid) {
+    failures.push('dex paid: required but token is not flagged as paid');
   }
 
   if (dexPaidEnabled && !candidate.metrics.dexPaid) {
@@ -205,6 +258,13 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
       telegram: graduatedCoin?.telegram || gmgn?.link?.telegram || '',
     },
     metrics: {
+      buySellRatio: (() => {
+        const buys = Number(trendingToken?.buys ?? 0);
+        const sells = Number(trendingToken?.sells ?? 0);
+        if (buys <= 0 && sells <= 0) return 0;
+        if (sells <= 0) return buys > 0 ? 999 : 0;
+        return buys / sells;
+      })(),
       priceUsd,
       marketCapUsd,
       liquidityUsd: Number(gmgn?.liquidity ?? jupiterAsset?.liquidity ?? trendingToken?.liquidity ?? 0),
@@ -218,14 +278,7 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
       trendingHotLevel: Number(trendingToken?.hot_level ?? 0),
       trendingSmartDegenCount: Number(trendingToken?.smart_degen_count ?? 0),
       dexPaid: detectDexPaid({ gmgn, graduatedCoin, trendingToken, jupiterAsset }),
-      tokenAgeMs: Number(firstPositiveNumber(
-        trendingToken?.ageMs,
-        trendingToken?.age_ms,
-        graduatedCoin?.ageMs,
-        graduatedCoin?.age_ms,
-        gmgn?.age_ms,
-        gmgn?.token_age_ms,
-      ) || 0),
+      tokenAgeMs: deriveTokenAgeMs({ gmgn, graduatedCoin, trendingToken, jupiterAsset }),
     },
     signals: {
       route: signalRoute,
