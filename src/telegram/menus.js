@@ -53,6 +53,9 @@ export function menuKeyboard() {
         [
           { text: 'Learning', callback_data: 'menu:learn' },
         ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
       ],
     },
   };
@@ -236,12 +239,9 @@ export function positionsText() {
   if (activeSection.hiddenCount > 0) {
     lines.push(`<i>${activeSection.hiddenCount} active position(s) hidden to avoid Telegram message limit.</i>`);
   }
-  const text = lines.join('
-');
+  const text = lines.join('\n');
   if (text.length <= TELEGRAM_MESSAGE_SAFE_LIMIT) return text;
-  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}
-
-<i>Output truncated to fit Telegram limit.</i>`;
+  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}\n\n<i>Output truncated to fit Telegram limit.</i>`;
 }
 
 export function historyTradeText() {
@@ -257,12 +257,9 @@ export function historyTradeText() {
   if (inactiveSection.hiddenCount > 0) {
     lines.push(`<i>${inactiveSection.hiddenCount} closed position(s) hidden to avoid Telegram message limit.</i>`);
   }
-  const text = lines.join('
-');
+  const text = lines.join('\n');
   if (text.length <= TELEGRAM_MESSAGE_SAFE_LIMIT) return text;
-  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}
-
-<i>Output truncated to fit Telegram limit.</i>`;
+  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}\n\n<i>Output truncated to fit Telegram limit.</i>`;
 }
 
 export function positionsKeyboard() {
