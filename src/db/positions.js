@@ -6,6 +6,16 @@ export function openPositions() {
   return db.prepare('SELECT * FROM dry_run_positions WHERE status = ? ORDER BY opened_at_ms DESC').all('open');
 }
 
+export function inactivePositions(limit = 10) {
+  return db.prepare(`
+    SELECT *
+    FROM dry_run_positions
+    WHERE status != ?
+    ORDER BY COALESCE(closed_at_ms, opened_at_ms) DESC, id DESC
+    LIMIT ?
+  `).all('open', limit);
+}
+
 export function openPositionCount() {
   return db.prepare('SELECT COUNT(*) AS count FROM dry_run_positions WHERE status = ?').get('open').count;
 }
@@ -31,9 +41,9 @@ export function createDryRunPosition(candidateId, candidate, decision, reason = 
   const sizeSol = strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1);
   const entryPrice = Number(candidate.metrics.priceUsd || 0) || null;
   const entryMcap = Number(candidate.metrics.marketCapUsd || candidate.metrics.graduatedMarketCapUsd || 0) || null;
-  const tp = Number(decision.suggested_tp_percent || strat.tp_percent || numSetting('default_tp_percent', 50));
+  const tp = strat.profit_lock_enabled ? 999999 : Number(decision.suggested_tp_percent || strat.tp_percent || numSetting('default_tp_percent', 50));
   const sl = Number(decision.suggested_sl_percent || strat.sl_percent || numSetting('default_sl_percent', -25));
-  const trailingEnabled = (strat.trailing_enabled ?? boolSetting('default_trailing_enabled', true)) ? 1 : 0;
+  const trailingEnabled = strat.profit_lock_enabled ? 0 : ((strat.trailing_enabled ?? boolSetting('default_trailing_enabled', true)) ? 1 : 0);
   const trailingPercent = strat.trailing_percent ?? numSetting('default_trailing_percent', 20);
 
   return db.transaction(() => {
@@ -85,9 +95,9 @@ export function createLivePosition(candidateId, candidate, decision, swap, reaso
   const sizeSol = strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1);
   const entryPrice = Number(candidate.metrics.priceUsd || 0) || null;
   const entryMcap = Number(candidate.metrics.marketCapUsd || candidate.metrics.graduatedMarketCapUsd || 0) || null;
-  const tp = Number(decision.suggested_tp_percent || strat.tp_percent || numSetting('default_tp_percent', 50));
+  const tp = strat.profit_lock_enabled ? 999999 : Number(decision.suggested_tp_percent || strat.tp_percent || numSetting('default_tp_percent', 50));
   const sl = Number(decision.suggested_sl_percent || strat.sl_percent || numSetting('default_sl_percent', -25));
-  const trailingEnabled = (strat.trailing_enabled ?? boolSetting('default_trailing_enabled', true)) ? 1 : 0;
+  const trailingEnabled = strat.profit_lock_enabled ? 0 : ((strat.trailing_enabled ?? boolSetting('default_trailing_enabled', true)) ? 1 : 0);
   const trailingPercent = strat.trailing_percent ?? numSetting('default_trailing_percent', 20);
 
   return db.transaction(() => {

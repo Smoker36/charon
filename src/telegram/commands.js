@@ -16,6 +16,7 @@ import {
   mainMenuText,
   walletsText,
   positionsText,
+  positionsKeyboard,
   candidateButtons,
   positionButtons,
   strategyMenuText,
@@ -37,6 +38,11 @@ export async function handleMessage(msg) {
   if (!text.startsWith('/')) return;
   if (text.startsWith('/menu')) return sendMenu(chatId);
   if (text.startsWith('/positions')) return sendPositions(chatId);
+  if (text.startsWith('/sell')) {
+    const id = Number(text.split(/\s+/)[1]);
+    if (!Number.isFinite(id) || id <= 0) return bot.sendMessage(chatId, 'Usage: /sell <position_id>');
+    return closePosition(chatId, id, 'MANUAL');
+  }
   if (text.startsWith('/filters')) return bot.sendMessage(chatId, filtersText(), { parse_mode: 'HTML' });
   if (text.startsWith('/strategy')) {
     const parts = text.split(/\s+/);
@@ -56,12 +62,12 @@ export async function handleMessage(msg) {
     const [, id, key, ...rest] = parts;
     const value = rest.join(' ');
     if (!id || !key || !value) {
-      return bot.sendMessage(chatId, 'Usage: /stratset <strategy_id> <key> <value>\n\nExample: /stratset sniper tp_percent 75\n\nKeys: tp_percent, sl_percent, position_size_sol, max_open_positions, min_mcap_usd, max_mcap_usd, min_holders, trailing_enabled, trailing_percent, partial_tp, partial_tp_at_percent, partial_tp_sell_percent, max_hold_ms, use_llm, llm_min_confidence, min_source_count, require_fee_claim, min_fee_claim_sol, min_gmgn_total_fee_sol, max_ath_distance_pct, fee_mcap_divisor, migrated_buy_max_ath_distance_pct, volume_to_mcap_min_ratio');
+      return bot.sendMessage(chatId, 'Usage: /stratset <strategy_id> <key> <value>\n\nExample: /stratset sniper tp_percent 75\n\nKeys: tp_percent, sl_percent, position_size_sol, max_open_positions, min_mcap_usd, max_mcap_usd, min_holders, trailing_enabled, trailing_percent, partial_tp, partial_tp_at_percent, partial_tp_sell_percent, max_hold_ms, use_llm, llm_min_confidence, min_source_count, require_fee_claim, min_fee_claim_sol, min_gmgn_total_fee_sol, max_ath_distance_pct, fee_mcap_divisor, migrated_buy_max_ath_distance_pct, volume_to_mcap_min_ratio, profit_lock_enabled, profit_lock_trigger_1_percent, profit_lock_floor_1_percent, profit_lock_trigger_2_percent, profit_lock_floor_2_percent, profit_lock_trigger_3_percent, profit_lock_floor_3_percent, profit_lock_dynamic_drawdown_percent');
     }
     const strat = strategyById(id);
     if (!strat) return bot.sendMessage(chatId, `Strategy "${id}" not found.`);
-    const numKeys = new Set(['tp_percent', 'sl_percent', 'position_size_sol', 'max_open_positions', 'min_mcap_usd', 'max_mcap_usd', 'min_holders', 'max_top20_holder_percent', 'trailing_percent', 'partial_tp_at_percent', 'partial_tp_sell_percent', 'max_hold_ms', 'llm_min_confidence', 'min_source_count', 'min_fee_claim_sol', 'min_gmgn_total_fee_sol', 'max_ath_distance_pct', 'token_age_max_ms', 'trending_min_volume_usd', 'trending_min_swaps', 'trending_max_rug_ratio', 'trending_max_bundler_rate', 'min_saved_wallet_holders', 'min_graduated_volume_usd', 'fee_mcap_divisor', 'migrated_buy_max_ath_distance_pct', 'volume_to_mcap_min_ratio']);
-    const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim']);
+    const numKeys = new Set(['tp_percent', 'sl_percent', 'position_size_sol', 'max_open_positions', 'min_mcap_usd', 'max_mcap_usd', 'min_holders', 'max_top20_holder_percent', 'trailing_percent', 'partial_tp_at_percent', 'partial_tp_sell_percent', 'max_hold_ms', 'llm_min_confidence', 'min_source_count', 'min_fee_claim_sol', 'min_gmgn_total_fee_sol', 'max_ath_distance_pct', 'token_age_max_ms', 'trending_min_volume_usd', 'trending_min_swaps', 'trending_max_rug_ratio', 'trending_max_bundler_rate', 'min_saved_wallet_holders', 'min_graduated_volume_usd', 'fee_mcap_divisor', 'migrated_buy_max_ath_distance_pct', 'volume_to_mcap_min_ratio', 'profit_lock_trigger_1_percent', 'profit_lock_floor_1_percent', 'profit_lock_trigger_2_percent', 'profit_lock_floor_2_percent', 'profit_lock_trigger_3_percent', 'profit_lock_floor_3_percent', 'profit_lock_dynamic_drawdown_percent']);
+    const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim', 'profit_lock_enabled']);
     const newConfig = { ...strat };
     delete newConfig.id;
     delete newConfig.name;
@@ -69,6 +75,11 @@ export async function handleMessage(msg) {
       newConfig[key] = Number(value);
     } else if (boolKeys.has(key)) {
       newConfig[key] = value === 'true' || value === '1' || value === 'yes';
+      if (key === 'profit_lock_enabled' && newConfig[key]) {
+        newConfig.tp_percent = 999999;
+        newConfig.sl_percent = -20;
+        newConfig.trailing_enabled = false;
+      }
     } else {
       newConfig[key] = value;
     }
@@ -158,9 +169,11 @@ export async function sendCandidate(chatId, id) {
 }
 
 export async function sendPositions(chatId) {
-  const rows = allPositions(12);
-  const text = rows.length ? rows.map(formatPosition).join('\n\n') : 'No dry-run positions yet.';
-  await bot.sendMessage(chatId, `📍 <b>Positions</b>\n\n${text}`, { parse_mode: 'HTML', disable_web_page_preview: true });
+  await bot.sendMessage(chatId, positionsText(), {
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...positionsKeyboard(),
+  });
 }
 
 export async function sendPosition(chatId, id, query = null) {
@@ -244,7 +257,8 @@ export function setupTelegram() {
     { command: 'menu', description: 'Open Charon menu' },
     { command: 'strategy', description: 'Show/switch strategy' },
     { command: 'stratset', description: 'Set strategy config (stratset id key value)' },
-    { command: 'positions', description: 'Show dry-run positions' },
+    { command: 'positions', description: 'Show active/inactive positions' },
+    { command: 'sell', description: 'Manually sell an open position' },
     { command: 'candidate', description: 'Show candidate by mint' },
     { command: 'filters', description: 'Show filters' },
     { command: 'pnl', description: 'Show saved-wallet PnL' },
@@ -332,9 +346,6 @@ function parseSetFilter(text) {
   return { key: parts[1], value: parts[2] };
 }
 
-function allPositions(limit = 10) {
-  return db.prepare('SELECT * FROM dry_run_positions ORDER BY id DESC LIMIT ?').all(limit);
-}
 
 function savedWallets() {
   return db.prepare('SELECT * FROM saved_wallets ORDER BY label').all();

@@ -23,6 +23,23 @@ export function numSetting(key, fallback = 0) {
 
 const strategyCache = { id: null, config: null, at: 0 };
 
+export function normalizeStrategyConfig(id, name, config = {}) {
+  const profitLockEnabled = config.profit_lock_enabled ?? id === 'profit_lock';
+  return {
+    ...config,
+    profit_lock_enabled: Boolean(profitLockEnabled),
+    profit_lock_trigger_1_percent: Number(config.profit_lock_trigger_1_percent ?? 15),
+    profit_lock_floor_1_percent: Number(config.profit_lock_floor_1_percent ?? 5),
+    profit_lock_trigger_2_percent: Number(config.profit_lock_trigger_2_percent ?? 40),
+    profit_lock_floor_2_percent: Number(config.profit_lock_floor_2_percent ?? 20),
+    profit_lock_trigger_3_percent: Number(config.profit_lock_trigger_3_percent ?? 80),
+    profit_lock_floor_3_percent: Number(config.profit_lock_floor_3_percent ?? 50),
+    profit_lock_dynamic_drawdown_percent: Number(config.profit_lock_dynamic_drawdown_percent ?? 30),
+    id,
+    name,
+  };
+}
+
 export function activeStrategy() {
   if (strategyCache.config && Date.now() - strategyCache.at < 5000) return strategyCache.config;
   const row = db.prepare('SELECT * FROM strategies WHERE enabled = 1 LIMIT 1').get();
@@ -31,7 +48,7 @@ export function activeStrategy() {
     if (fallback) return fallback;
     return defaultStrategy();
   }
-  const config = { id: row.id, name: row.name, ...JSON.parse(row.config_json) };
+  const config = normalizeStrategyConfig(row.id, row.name, JSON.parse(row.config_json));
   strategyCache.id = row.id;
   strategyCache.config = config;
   strategyCache.at = Date.now();
@@ -41,15 +58,13 @@ export function activeStrategy() {
 export function strategyById(id) {
   const row = db.prepare('SELECT * FROM strategies WHERE id = ?').get(id);
   if (!row) return null;
-  return { id: row.id, name: row.name, ...JSON.parse(row.config_json) };
+  return normalizeStrategyConfig(row.id, row.name, JSON.parse(row.config_json));
 }
 
 export function allStrategies() {
   return db.prepare('SELECT * FROM strategies ORDER BY id').all().map(row => ({
-    id: row.id,
-    name: row.name,
+    ...normalizeStrategyConfig(row.id, row.name, JSON.parse(row.config_json)),
     enabled: Boolean(row.enabled),
-    ...JSON.parse(row.config_json),
   }));
 }
 
@@ -88,5 +103,9 @@ function defaultStrategy() {
     tp_percent: 50, sl_percent: -25, trailing_enabled: true, trailing_percent: 20,
     partial_tp: false, partial_tp_at_percent: 0, partial_tp_sell_percent: 0,
     max_hold_ms: 0, use_llm: true, llm_min_confidence: 50,
+    profit_lock_enabled: false, profit_lock_trigger_1_percent: 15, profit_lock_floor_1_percent: 5,
+    profit_lock_trigger_2_percent: 40, profit_lock_floor_2_percent: 20,
+    profit_lock_trigger_3_percent: 80, profit_lock_floor_3_percent: 50,
+    profit_lock_dynamic_drawdown_percent: 30,
   };
 }
