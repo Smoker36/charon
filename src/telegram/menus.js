@@ -6,19 +6,45 @@ import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
 import { ENABLE_LLM, LLM_API_KEY } from '../config.js';
 
+const TELEGRAM_MESSAGE_SAFE_LIMIT = 3800;
+
+function fitPositionSection(items, formatter, emptyText, maxChars) {
+  if (!items.length) return { text: emptyText, hiddenCount: 0 };
+  const rendered = [];
+  let used = 0;
+  let hiddenCount = 0;
+  for (const item of items) {
+    const chunk = formatter(item);
+    const add = (rendered.length ? 2 : 0) + chunk.length;
+    if (used + add > maxChars) {
+      hiddenCount += 1;
+      continue;
+    }
+    rendered.push(chunk);
+    used += add;
+  }
+  if (!rendered.length) {
+    return { text: `Too many details to display here. Open a position from buttons below.`, hiddenCount: items.length };
+  }
+  return { text: rendered.join('\n\n'), hiddenCount };
+}
+
 export function menuKeyboard() {
   return {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: 'Strategy', callback_data: 'menu:strategy' },
           { text: 'Agent', callback_data: 'menu:agent' },
+          { text: 'Strategy', callback_data: 'menu:strategy' },
+        ],
+        [
+          { text: 'Positions', callback_data: 'menu:positions' },
           { text: 'Filters', callback_data: 'menu:filters' },
         ],
         [
           { text: 'Wallets', callback_data: 'menu:wallets' },
-          { text: 'Positions', callback_data: 'menu:positions' },
           { text: 'PnL', callback_data: 'menu:pnl' },
+          { text: 'Learning', callback_data: 'menu:learn' },
         ],
       ],
     },
@@ -195,28 +221,33 @@ export function positionsText({ showInactive = true } = {}) {
   const active = openPositions();
   const inactive = showInactive ? inactivePositions(12) : [];
   const inactiveCount = inactivePositionCount();
-  const activeText = active.length
-    ? active.map(formatPosition).join('\n\n')
-    : 'No active positions.';
+
   const lines = [
     '📍 <b>Positions</b>',
     '',
     `🟢 <b>Active Positions</b> (${active.length})`,
-    activeText,
   ];
+
+  const activeSection = fitPositionSection(active, formatPosition, 'No active positions.', 2200);
+  lines.push(activeSection.text);
+  if (activeSection.hiddenCount > 0) {
+    lines.push(`<i>${activeSection.hiddenCount} active position(s) hidden to avoid Telegram message limit.</i>`);
+  }
+
   if (showInactive) {
-    const inactiveText = inactive.length
-      ? inactive.map(formatPosition).join('\n\n')
-      : 'No inactive positions yet.';
-    lines.push(
-      '',
-      `⚪ <b>Inactive Positions</b> (${inactiveCount})`,
-      inactiveText,
-    );
+    lines.push('', `⚪ <b>Inactive Positions</b> (${inactiveCount})`);
+    const inactiveSection = fitPositionSection(inactive, formatPosition, 'No inactive positions yet.', 1300);
+    lines.push(inactiveSection.text);
+    if (inactiveSection.hiddenCount > 0) {
+      lines.push(`<i>${inactiveSection.hiddenCount} inactive position(s) hidden to avoid Telegram message limit.</i>`);
+    }
   } else {
     lines.push('', `⚪ <b>Inactive Positions hidden</b> (${inactiveCount})`);
   }
-  return lines.join('\n');
+
+  const text = lines.join('\n');
+  if (text.length <= TELEGRAM_MESSAGE_SAFE_LIMIT) return text;
+  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}\n\n<i>Output truncated to fit Telegram limit.</i>`;
 }
 
 export function positionsKeyboard({ showInactive = true } = {}) {
@@ -278,10 +309,22 @@ export function strategyMenuText() {
 export function strategyKeyboard() {
   const strat = activeStrategy();
   const all = allStrategies();
-  const selector = all.map(s => [{
-    text: `${s.enabled ? '▶ ' : ''}${s.name}`,
-    callback_data: `strategy:select:${s.id}`,
-  }]);
+  const selector = [];
+  for (let i = 0; i < all.length; i += 2) {
+    const left = all[i];
+    const right = all[i + 1];
+    const row = [{
+      text: `${left.enabled ? '▶ ' : ''}${left.name}`,
+      callback_data: `strategy:select:${left.id}`,
+    }];
+    if (right) {
+      row.push({
+        text: `${right.enabled ? '▶ ' : ''}${right.name}`,
+        callback_data: `strategy:select:${right.id}`,
+      });
+    }
+    selector.push(row);
+  }
   const config = [
     [
       { text: `TP +${strat.tp_percent}%`, callback_data: 'stratinput:tp_percent' },

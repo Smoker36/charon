@@ -58,6 +58,7 @@ export async function handleCallback(query) {
     return editMenuMessage(query, positionsText({ showInactive }), positionsKeyboard({ showInactive }));
   }
   if (data === 'menu:pnl') return sendPnl(chatId, query);
+  if (data === 'menu:learn') return editMenuMessage(query, '🧠 <b>Learning</b>\nUse <code>/learn 7d</code> to generate lessons and <code>/lessons</code> to view saved lessons.', navKeyboard());
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
       { text: 'Agent', callback_data: 'menu:agent' },
