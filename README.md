@@ -194,7 +194,7 @@ Additional optional global filter knobs (set with `/setfilter`):
 /wallets
 ```
 
-`/positions` separates active and inactive positions. Active positions include inline manual sell buttons, and `/sell <position_id>` closes an open dry-run position or executes a live sell for a live position.
+`/positions` separates active and inactive positions. Active positions include inline manual sell buttons, inactive positions can be hidden/shown with the Hide/Show Inactive button, and `/sell <position_id>` closes an open dry-run position or executes a live sell for a live position.
 
 ## Storage
 

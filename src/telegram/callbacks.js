@@ -53,7 +53,10 @@ export async function handleCallback(query) {
   if (data === 'menu:filters') return editMenuMessage(query, filtersText(), filtersKeyboard());
   if (data === 'menu:strategy') return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
   if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
-  if (data === 'menu:positions') return editMenuMessage(query, positionsText(), positionsKeyboard());
+  if (data.startsWith('menu:positions')) {
+    const showInactive = data !== 'menu:positions:hide_inactive';
+    return editMenuMessage(query, positionsText({ showInactive }), positionsKeyboard({ showInactive }));
+  }
   if (data === 'menu:pnl') {
     const { sendPnl } = await import('./send.js');
     return sendPnl(chatId, query);

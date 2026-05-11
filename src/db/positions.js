@@ -16,6 +16,10 @@ export function inactivePositions(limit = 10) {
   `).all('open', limit);
 }
 
+export function inactivePositionCount() {
+  return db.prepare('SELECT COUNT(*) AS count FROM dry_run_positions WHERE status != ?').get('open').count;
+}
+
 export function openPositionCount() {
   return db.prepare('SELECT COUNT(*) AS count FROM dry_run_positions WHERE status = ?').get('open').count;
 }

@@ -1,6 +1,6 @@
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short } from '../format.js';
 import { numSetting, boolSetting, setting, activeStrategy, allStrategies } from '../db/settings.js';
-import { openPositionCount, tradingMode, openPositions, inactivePositions } from '../db/positions.js';
+import { openPositionCount, tradingMode, openPositions, inactivePositions, inactivePositionCount } from '../db/positions.js';
 import { savedWallets } from '../enrichment/wallets.js';
 import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
@@ -191,29 +191,37 @@ export function walletsText() {
   return `👛 <b>Saved Wallets</b>\n\n${body}`;
 }
 
-export function positionsText() {
+export function positionsText({ showInactive = true } = {}) {
   const active = openPositions();
-  const inactive = inactivePositions(12);
+  const inactive = showInactive ? inactivePositions(12) : [];
+  const inactiveCount = inactivePositionCount();
   const activeText = active.length
     ? active.map(formatPosition).join('\n\n')
     : 'No active positions.';
-  const inactiveText = inactive.length
-    ? inactive.map(formatPosition).join('\n\n')
-    : 'No inactive positions yet.';
-  return [
+  const lines = [
     '📍 <b>Positions</b>',
     '',
     `🟢 <b>Active Positions</b> (${active.length})`,
     activeText,
-    '',
-    `⚪ <b>Inactive Positions</b> (${inactive.length})`,
-    inactiveText,
-  ].join('\n');
+  ];
+  if (showInactive) {
+    const inactiveText = inactive.length
+      ? inactive.map(formatPosition).join('\n\n')
+      : 'No inactive positions yet.';
+    lines.push(
+      '',
+      `⚪ <b>Inactive Positions</b> (${inactiveCount})`,
+      inactiveText,
+    );
+  } else {
+    lines.push('', `⚪ <b>Inactive Positions hidden</b> (${inactiveCount})`);
+  }
+  return lines.join('\n');
 }
 
-export function positionsKeyboard() {
+export function positionsKeyboard({ showInactive = true } = {}) {
   const active = openPositions().slice(0, 8);
-  const inactive = inactivePositions(6);
+  const inactive = showInactive ? inactivePositions(6) : [];
   const keyboard = [];
   for (const position of active) {
     const label = position.symbol || short(position.mint);
@@ -222,7 +230,11 @@ export function positionsKeyboard() {
       { text: `Manual Sell #${position.id}`, callback_data: `sell:${position.id}` },
     ]);
   }
-  if (inactive.length) {
+  keyboard.push([{
+    text: showInactive ? 'Hide Inactive' : 'Show Inactive',
+    callback_data: showInactive ? 'menu:positions:hide_inactive' : 'menu:positions:show_inactive',
+  }]);
+  if (showInactive && inactive.length) {
     keyboard.push([{ text: '── Inactive ──', callback_data: 'noop' }]);
     for (const position of inactive) {
       const label = position.symbol || short(position.mint);
@@ -230,7 +242,7 @@ export function positionsKeyboard() {
     }
   }
   keyboard.push([
-    { text: 'Refresh', callback_data: 'menu:positions' },
+    { text: 'Refresh', callback_data: showInactive ? 'menu:positions' : 'menu:positions:hide_inactive' },
     { text: 'Back', callback_data: 'menu:main' },
   ]);
   return { reply_markup: { inline_keyboard: keyboard } };
