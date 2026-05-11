@@ -132,6 +132,13 @@ export async function refreshPosition(position, { autoExit = true, jupiterPnl = 
 
   // Max hold time check
   const strat = strategyById(position.strategy_id);
+  const highPnlPercent = (highWaterMcap / Number(position.entry_mcap) - 1) * 100;
+  let profitLockFloor = null;
+  if (strat?.id === 'profit_lock') {
+    if (highPnlPercent >= 80) profitLockFloor = Math.max(50, highPnlPercent - 30);
+    else if (highPnlPercent >= 40) profitLockFloor = 20;
+    else if (highPnlPercent >= 15) profitLockFloor = 5;
+  }
   if (strat?.max_hold_ms > 0 && (now() - position.opened_at_ms) >= strat.max_hold_ms) {
     exitReason = 'MAX_HOLD';
   }
@@ -164,6 +171,7 @@ export async function refreshPosition(position, { autoExit = true, jupiterPnl = 
   // Standard exit checks
   if (!exitReason) {
     if (slHit) exitReason = 'SL';
+    else if (profitLockFloor != null && pnlPercent <= profitLockFloor) exitReason = 'PROFIT_LOCK';
     else if (tpHit && !position.trailing_enabled) exitReason = 'TP';
     else if (trailingHit) exitReason = 'TRAILING_TP';
   }
