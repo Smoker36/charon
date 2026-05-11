@@ -24,7 +24,7 @@ import { candidateById, updateCandidateStatus } from '../db/candidates.js';
 import { storeDecision, logDecisionEvent } from '../db/decisions.js';
 import { createDryRunPosition, canOpenMorePositions, openPositionCount, tradingMode } from '../db/positions.js';
 import { executeLiveBuy, executeConfirmedIntent, rejectIntent } from '../execution/router.js';
-import { sendCandidate, sendPosition, closePosition, updatePositionRule, toggleTrailing } from './commands.js';
+import { sendCandidate, sendPosition, closePosition, updatePositionRule, toggleTrailing, sendPnl } from './commands.js';
 import { requestNumericFilterInput, requestStrategyNumericInput } from './input.js';
 
 export async function handleCallback(query) {
@@ -57,10 +57,7 @@ export async function handleCallback(query) {
     const showInactive = data !== 'menu:positions:hide_inactive';
     return editMenuMessage(query, positionsText({ showInactive }), positionsKeyboard({ showInactive }));
   }
-  if (data === 'menu:pnl') {
-    const { sendPnl } = await import('./send.js');
-    return sendPnl(chatId, query);
-  }
+  if (data === 'menu:pnl') return sendPnl(chatId, query);
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
       { text: 'Agent', callback_data: 'menu:agent' },

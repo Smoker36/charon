@@ -25,7 +25,8 @@ setCandidateHandler(processCandidateFromSignals);
 export async function processCandidateFromSignals(signals) {
   // Skip if max positions reached — don't waste enrichment/LLM calls
   if (!canOpenMorePositions()) {
-    const max = numSetting('max_open_positions', 3);
+    const strat = activeStrategy();
+    const max = strat.max_open_positions ?? numSetting('max_open_positions', 3);
     console.log(`[agent] max positions reached (${openPositionCount()}/${max}), skipping ${signals.mint.slice(0, 8)}...`);
     return;
   }
@@ -87,10 +88,14 @@ export async function processCandidateFromSignals(signals) {
 
   if (batchId) await sendBatchReveal(batchId, rows, batchDecision, candidateId);
 
-  if (selectedRow && boolSetting('agent_enabled', true) && batchDecision.verdict === 'BUY' && batchDecision.confidence >= numSetting('llm_min_confidence', 75)) {
+  const agentEnabled = boolSetting('agent_enabled', true);
+  const configuredConfidenceThreshold = Number(strat.llm_min_confidence ?? numSetting('llm_min_confidence', 75));
+  const confidenceThreshold = Number.isFinite(configuredConfidenceThreshold) ? configuredConfidenceThreshold : 75;
+  const maxOpenPositions = strat.max_open_positions ?? numSetting('max_open_positions', 3);
+
+  if (selectedRow && agentEnabled && batchDecision.verdict === 'BUY' && batchDecision.confidence >= confidenceThreshold) {
     if (!canOpenMorePositions()) {
-      const max = numSetting('max_open_positions', 3);
-      console.log(`[agent] max open positions reached (${openPositionCount()}/${max}), skipping buy ${selectedRow.candidate.token.mint}`);
+      console.log(`[agent] max open positions reached (${openPositionCount()}/${maxOpenPositions}), skipping buy ${selectedRow.candidate.token.mint}`);
       logDecisionEvent({
         batchId,
         triggerCandidateId: candidateId,
@@ -98,7 +103,7 @@ export async function processCandidateFromSignals(signals) {
         rows,
         decision: batchDecision,
         action: 'entry_skipped_max_positions',
-        guardrails: { maxOpenPositions: max, openPositions: openPositionCount() },
+        guardrails: { maxOpenPositions, openPositions: openPositionCount() },
       });
       return;
     }
@@ -112,10 +117,12 @@ export async function processCandidateFromSignals(signals) {
       decision: batchDecision,
       action: selectedRow ? 'entry_not_approved' : 'no_candidate_selected',
       guardrails: {
-        agentEnabled: boolSetting('agent_enabled', true),
-        confidenceThreshold: numSetting('llm_min_confidence', 75),
+        agentEnabled,
+        verdict: batchDecision.verdict,
+        confidence: batchDecision.confidence,
+        confidenceThreshold,
         openPositions: openPositionCount(),
-        maxOpenPositions: numSetting('max_open_positions', 3),
+        maxOpenPositions,
       },
     });
   }
@@ -123,6 +130,8 @@ export async function processCandidateFromSignals(signals) {
 
 export async function handleApprovedBuy(selectedRow, decision, batchId, rows = [], triggerCandidateId = null) {
   const mode = tradingMode();
+  const strat = activeStrategy();
+  const maxOpenPositions = strat.max_open_positions ?? numSetting('max_open_positions', 3);
   const freshSelectedRow = await refreshCandidateForExecution(selectedRow);
   const executionRows = rows.map(row => row.id === freshSelectedRow.id ? freshSelectedRow : row);
   if (!freshSelectedRow.candidate.filters?.passed) {
@@ -160,7 +169,7 @@ export async function handleApprovedBuy(selectedRow, decision, batchId, rows = [
       decision,
       mode,
       action: 'dry_run_entry',
-      guardrails: { maxOpenPositions: numSetting('max_open_positions', 3), openPositions: openPositionCount() },
+      guardrails: { maxOpenPositions, openPositions: openPositionCount() },
       execution: { positionId },
     });
     await sendPositionOpen(positionId);
@@ -177,7 +186,7 @@ export async function handleApprovedBuy(selectedRow, decision, batchId, rows = [
       decision,
       mode,
       action: 'confirm_intent_created',
-      guardrails: { maxOpenPositions: numSetting('max_open_positions', 3), openPositions: openPositionCount() },
+      guardrails: { maxOpenPositions, openPositions: openPositionCount() },
       execution: { intentId },
     });
     await sendTradeIntent(intentId, freshSelectedRow.candidate, decision);
@@ -196,7 +205,7 @@ export async function handleApprovedBuy(selectedRow, decision, batchId, rows = [
       decision,
       mode,
       action: 'live_entry_failed',
-      guardrails: { maxOpenPositions: numSetting('max_open_positions', 3), openPositions: openPositionCount() },
+      guardrails: { maxOpenPositions, openPositions: openPositionCount() },
       execution: { intentId, error: err.message },
     });
     await sendTelegram([

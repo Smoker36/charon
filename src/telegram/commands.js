@@ -285,7 +285,7 @@ async function sendMenu(chatId = TELEGRAM_CHAT_ID) {
   });
 }
 
-async function sendPnl(chatId, query = null) {
+export async function sendPnl(chatId, query = null) {
   const modeLines = [
     summarizeModePnl('dry_run', 'Dry-run Trade'),
     summarizeModePnl('live', 'Live Trade'),
