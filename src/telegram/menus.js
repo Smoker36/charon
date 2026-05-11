@@ -45,6 +45,25 @@ export function menuKeyboard() {
           { text: 'Wallets', callback_data: 'menu:wallets' },
           { text: 'Filters', callback_data: 'menu:filters' },
           { text: 'PnL', callback_data: 'menu:pnl' },
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
         ],
         [
           { text: 'Learning', callback_data: 'menu:learn' },
