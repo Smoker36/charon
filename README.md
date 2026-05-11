@@ -156,6 +156,19 @@ Default strategies:
   - high PnL `>= +40%` locks floor at `+20%`
   - high PnL `>= +80%` locks floor at `max(+50%, highPnL - 30%)`
 
+Profit lock is also configurable from `/menu → Strategy` for every strategy. Turning it on for any strategy applies profit-lock mode (`TP` unlimited, trailing ignored, default SL `-20%`) and exposes configurable trigger/floor/dynamic-drawdown fields. You can also use:
+
+```bash
+/stratset sniper profit_lock_enabled true
+/stratset sniper profit_lock_trigger_1_percent 15
+/stratset sniper profit_lock_floor_1_percent 5
+/stratset sniper profit_lock_trigger_2_percent 40
+/stratset sniper profit_lock_floor_2_percent 20
+/stratset sniper profit_lock_trigger_3_percent 80
+/stratset sniper profit_lock_floor_3_percent 50
+/stratset sniper profit_lock_dynamic_drawdown_percent 30
+```
+
 Strategy settings are stored in SQLite and hot-read. Menu changes apply without restart.
 
 Additional optional global filter knobs (set with `/setfilter`):
@@ -170,6 +183,7 @@ Additional optional global filter knobs (set with `/setfilter`):
 /strategy
 /stratset <strategy_id> <key> <value>
 /positions
+/sell <position_id>
 /candidate <mint>
 /filters
 /pnl
@@ -179,6 +193,8 @@ Additional optional global filter knobs (set with `/setfilter`):
 /walletremove <label>
 /wallets
 ```
+
+`/positions` separates active and inactive positions. Active positions include inline manual sell buttons, and `/sell <position_id>` closes an open dry-run position or executes a live sell for a live position.
 
 ## Storage
 

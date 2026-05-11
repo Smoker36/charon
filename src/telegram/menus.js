@@ -1,6 +1,6 @@
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short } from '../format.js';
 import { numSetting, boolSetting, setting, activeStrategy, allStrategies } from '../db/settings.js';
-import { openPositionCount, tradingMode, allPositions } from '../db/positions.js';
+import { openPositionCount, tradingMode, openPositions, inactivePositions } from '../db/positions.js';
 import { savedWallets } from '../enrichment/wallets.js';
 import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
@@ -90,6 +90,13 @@ export const strategyNumericLabels = {
   partial_tp_at_percent: 'partial TP trigger percent',
   partial_tp_sell_percent: 'partial TP sell percent',
   max_hold_ms: 'maximum hold milliseconds',
+  profit_lock_trigger_1_percent: 'profit-lock first trigger percent',
+  profit_lock_floor_1_percent: 'profit-lock first locked profit percent',
+  profit_lock_trigger_2_percent: 'profit-lock second trigger percent',
+  profit_lock_floor_2_percent: 'profit-lock second locked profit percent',
+  profit_lock_trigger_3_percent: 'profit-lock dynamic trigger percent',
+  profit_lock_floor_3_percent: 'profit-lock minimum floor after dynamic trigger',
+  profit_lock_dynamic_drawdown_percent: 'profit-lock dynamic drawdown from high PnL',
 };
 
 export function filtersKeyboard() {
@@ -126,8 +133,8 @@ export function agentText() {
     `Batch candidates: ${numSetting('llm_candidate_pick_count', 10)}`,
     `Candidate freshness: ${Math.round(numSetting('llm_candidate_max_age_ms', 600000) / 1000)}s`,
     `Size: ${fmtSol(strat.position_size_sol)} SOL`,
-    `TP/SL: ${fmtPct(strat.tp_percent)} / ${fmtPct(strat.sl_percent)}`,
-    `Trailing: ${strat.trailing_enabled ? fmtPct(strat.trailing_percent) : 'off'}`,
+    `TP/SL: ${strat.profit_lock_enabled ? 'unlimited' : fmtPct(strat.tp_percent)} / ${fmtPct(strat.sl_percent)}`,
+    `Trailing: ${strat.profit_lock_enabled ? 'ignored' : strat.trailing_enabled ? fmtPct(strat.trailing_percent) : 'off'}`,
   ].join('\n');
 }
 
@@ -185,9 +192,48 @@ export function walletsText() {
 }
 
 export function positionsText() {
-  const rows = allPositions(12);
-  const text = rows.length ? rows.map(formatPosition).join('\n\n') : 'No dry-run positions yet.';
-  return `📍 <b>Positions</b>\n\n${text}`;
+  const active = openPositions();
+  const inactive = inactivePositions(12);
+  const activeText = active.length
+    ? active.map(formatPosition).join('\n\n')
+    : 'No active positions.';
+  const inactiveText = inactive.length
+    ? inactive.map(formatPosition).join('\n\n')
+    : 'No inactive positions yet.';
+  return [
+    '📍 <b>Positions</b>',
+    '',
+    `🟢 <b>Active Positions</b> (${active.length})`,
+    activeText,
+    '',
+    `⚪ <b>Inactive Positions</b> (${inactive.length})`,
+    inactiveText,
+  ].join('\n');
+}
+
+export function positionsKeyboard() {
+  const active = openPositions().slice(0, 8);
+  const inactive = inactivePositions(6);
+  const keyboard = [];
+  for (const position of active) {
+    const label = position.symbol || short(position.mint);
+    keyboard.push([
+      { text: `View #${position.id} ${label}`, callback_data: `pos:${position.id}` },
+      { text: `Manual Sell #${position.id}`, callback_data: `sell:${position.id}` },
+    ]);
+  }
+  if (inactive.length) {
+    keyboard.push([{ text: '── Inactive ──', callback_data: 'noop' }]);
+    for (const position of inactive) {
+      const label = position.symbol || short(position.mint);
+      keyboard.push([{ text: `View closed #${position.id} ${label}`, callback_data: `pos:${position.id}` }]);
+    }
+  }
+  keyboard.push([
+    { text: 'Refresh', callback_data: 'menu:positions' },
+    { text: 'Back', callback_data: 'menu:main' },
+  ]);
+  return { reply_markup: { inline_keyboard: keyboard } };
 }
 
 export function strategyMenuText() {
@@ -202,12 +248,14 @@ export function strategyMenuText() {
     `Min sources: ${strat.min_source_count}`,
     `Fee required: ${strat.require_fee_claim ? 'yes' : 'no'}`,
     `Size: ${fmtSol(strat.position_size_sol)} SOL`,
-    `TP/SL: ${fmtPct(strat.tp_percent)} / ${fmtPct(strat.sl_percent)}`,
-    `Trailing: ${strat.trailing_enabled ? fmtPct(strat.trailing_percent) : 'off'}`,
+    `TP/SL: ${strat.profit_lock_enabled ? 'unlimited' : fmtPct(strat.tp_percent)} / ${fmtPct(strat.sl_percent)}`,
+    `Trailing: ${strat.profit_lock_enabled ? 'ignored' : strat.trailing_enabled ? fmtPct(strat.trailing_percent) : 'off'}`,
     `Max positions: ${strat.max_open_positions}`,
     strat.min_holders > 0 ? `Min holders: ${strat.min_holders}` : null,
     strat.max_ath_distance_pct < 0 ? `Max ATH distance: ${strat.max_ath_distance_pct}%` : null,
     strat.partial_tp ? `Partial TP: ${strat.partial_tp_sell_percent}% at ${fmtPct(strat.partial_tp_at_percent)}` : null,
+    strat.profit_lock_enabled ? `Profit lock: ${fmtPct(strat.profit_lock_trigger_1_percent)}→${fmtPct(strat.profit_lock_floor_1_percent)}, ${fmtPct(strat.profit_lock_trigger_2_percent)}→${fmtPct(strat.profit_lock_floor_2_percent)}, ${fmtPct(strat.profit_lock_trigger_3_percent)}→max(${fmtPct(strat.profit_lock_floor_3_percent)}, high-${fmtPct(strat.profit_lock_dynamic_drawdown_percent)})` : 'Profit lock: off',
+    strat.profit_lock_enabled ? 'Profit lock mode: TP unlimited, trailing ignored' : null,
     strat.max_hold_ms > 0 ? `Max hold: ${Math.round(strat.max_hold_ms / 60000)}m` : null,
     strat.use_llm ? `LLM: yes (min ${strat.llm_min_confidence}%)` : 'LLM: no (rule-based)',
     '',
@@ -249,7 +297,11 @@ export function strategyKeyboard() {
     ],
     [
       { text: `Partial TP ${strat.partial_tp ? 'on' : 'off'}`, callback_data: 'stratcfg:partial_tp' },
+      { text: `Profit Lock ${strat.profit_lock_enabled ? 'on' : 'off'}`, callback_data: 'stratcfg:profit_lock_enabled' },
+    ],
+    [
       { text: `Max Hold ${strat.max_hold_ms > 0 ? Math.round(strat.max_hold_ms/60000)+'m' : 'off'}`, callback_data: 'stratinput:max_hold_ms' },
+      { text: `PL T1 ${strat.profit_lock_trigger_1_percent}%`, callback_data: 'stratinput:profit_lock_trigger_1_percent' },
     ],
     [
       { text: `Claim Fee ${fmtSol(strat.min_fee_claim_sol)} SOL`, callback_data: 'stratinput:min_fee_claim_sol' },
@@ -277,6 +329,18 @@ export function strategyKeyboard() {
     ],
     [
       { text: `Partial At ${strat.partial_tp_at_percent}%`, callback_data: 'stratinput:partial_tp_at_percent' },
+      { text: `PL F1 ${strat.profit_lock_floor_1_percent}%`, callback_data: 'stratinput:profit_lock_floor_1_percent' },
+    ],
+    [
+      { text: `PL T2 ${strat.profit_lock_trigger_2_percent}%`, callback_data: 'stratinput:profit_lock_trigger_2_percent' },
+      { text: `PL F2 ${strat.profit_lock_floor_2_percent}%`, callback_data: 'stratinput:profit_lock_floor_2_percent' },
+    ],
+    [
+      { text: `PL T3 ${strat.profit_lock_trigger_3_percent}%`, callback_data: 'stratinput:profit_lock_trigger_3_percent' },
+      { text: `PL F3 ${strat.profit_lock_floor_3_percent}%`, callback_data: 'stratinput:profit_lock_floor_3_percent' },
+    ],
+    [
+      { text: `PL Drawdown ${strat.profit_lock_dynamic_drawdown_percent}%`, callback_data: 'stratinput:profit_lock_dynamic_drawdown_percent' },
     ],
   ];
   return {
@@ -358,7 +422,7 @@ export function positionButtons(positionId) {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: 'Dry Sell', callback_data: `sell:${positionId}` },
+          { text: 'Manual Sell', callback_data: `sell:${positionId}` },
           { text: 'Refresh', callback_data: `pos:${positionId}` },
         ],
         [

@@ -281,6 +281,14 @@ export function initDb() {
     max_hold_ms: 0,
     use_llm: true,
     llm_min_confidence: 50,
+    profit_lock_enabled: false,
+    profit_lock_trigger_1_percent: 15,
+    profit_lock_floor_1_percent: 5,
+    profit_lock_trigger_2_percent: 40,
+    profit_lock_floor_2_percent: 20,
+    profit_lock_trigger_3_percent: 80,
+    profit_lock_floor_3_percent: 50,
+    profit_lock_dynamic_drawdown_percent: 30,
   }), ts);
 
   stratInsert.run('dip_buy', 'Dip Buy', 0, JSON.stringify({
@@ -313,6 +321,14 @@ export function initDb() {
     max_hold_ms: 0,
     use_llm: true,
     llm_min_confidence: 60,
+    profit_lock_enabled: false,
+    profit_lock_trigger_1_percent: 15,
+    profit_lock_floor_1_percent: 5,
+    profit_lock_trigger_2_percent: 40,
+    profit_lock_floor_2_percent: 20,
+    profit_lock_trigger_3_percent: 80,
+    profit_lock_floor_3_percent: 50,
+    profit_lock_dynamic_drawdown_percent: 30,
   }), ts);
 
   stratInsert.run('smart_money', 'Smart Money', 0, JSON.stringify({
@@ -345,6 +361,14 @@ export function initDb() {
     max_hold_ms: 0,
     use_llm: true,
     llm_min_confidence: 70,
+    profit_lock_enabled: false,
+    profit_lock_trigger_1_percent: 15,
+    profit_lock_floor_1_percent: 5,
+    profit_lock_trigger_2_percent: 40,
+    profit_lock_floor_2_percent: 20,
+    profit_lock_trigger_3_percent: 80,
+    profit_lock_floor_3_percent: 50,
+    profit_lock_dynamic_drawdown_percent: 30,
   }), ts);
 
   stratInsert.run('degen', 'Degen', 0, JSON.stringify({
@@ -377,6 +401,14 @@ export function initDb() {
     max_hold_ms: 0,
     use_llm: false,
     llm_min_confidence: 0,
+    profit_lock_enabled: false,
+    profit_lock_trigger_1_percent: 15,
+    profit_lock_floor_1_percent: 5,
+    profit_lock_trigger_2_percent: 40,
+    profit_lock_floor_2_percent: 20,
+    profit_lock_trigger_3_percent: 80,
+    profit_lock_floor_3_percent: 50,
+    profit_lock_dynamic_drawdown_percent: 30,
   }), ts);
 
   stratInsert.run('profit_lock', 'Profit Lock', 0, JSON.stringify({
@@ -409,6 +441,14 @@ export function initDb() {
     max_hold_ms: 0,
     use_llm: true,
     llm_min_confidence: 60,
+    profit_lock_enabled: true,
+    profit_lock_trigger_1_percent: 15,
+    profit_lock_floor_1_percent: 5,
+    profit_lock_trigger_2_percent: 40,
+    profit_lock_floor_2_percent: 20,
+    profit_lock_trigger_3_percent: 80,
+    profit_lock_floor_3_percent: 50,
+    profit_lock_dynamic_drawdown_percent: 30,
   }), ts);
 }
 
