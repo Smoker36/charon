@@ -13,6 +13,8 @@ import {
   walletsText,
   positionsText,
   positionsKeyboard,
+  historyTradeText,
+  historyTradeKeyboard,
   candidateButtons,
   sendTpSlDefaults,
   strategyMenuText,
@@ -45,7 +47,7 @@ export async function handleCallback(query) {
     setSetting('agent_enabled', boolSetting('agent_enabled', true) ? 'false' : 'true');
     return editMenuMessage(query, agentText(), agentKeyboard());
   }
-  if (data === 'toggle:trending_enabled' || data === 'toggle:trending_allow_degen') {
+  if (data === 'toggle:trending_enabled' || data === 'toggle:trending_allow_degen' || data === 'toggle:dex_paid') {
     const key = data.replace('toggle:', '');
     setSetting(key, boolSetting(key, key === 'trending_enabled') ? 'false' : 'true');
     return editMenuMessage(query, filtersText(), filtersKeyboard());
@@ -53,9 +55,11 @@ export async function handleCallback(query) {
   if (data === 'menu:filters') return editMenuMessage(query, filtersText(), filtersKeyboard());
   if (data === 'menu:strategy') return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
   if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
-  if (data.startsWith('menu:positions')) {
-    const showInactive = data !== 'menu:positions:hide_inactive';
-    return editMenuMessage(query, positionsText({ showInactive }), positionsKeyboard({ showInactive }));
+  if (data === 'menu:positions') {
+    return editMenuMessage(query, positionsText(), positionsKeyboard());
+  }
+  if (data === 'menu:historytrade') {
+    return editMenuMessage(query, historyTradeText(), historyTradeKeyboard());
   }
   if (data === 'menu:pnl') return sendPnl(chatId, query);
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
@@ -177,7 +181,9 @@ const STRAT_PRESETS = {
   min_fee_claim_sol: [0, 0.5, 1, 2, 5, 10],
   min_gmgn_total_fee_sol: [0, 3, 5, 10, 20],
   max_ath_distance_pct: [0, -20, -30, -40, -50, -60],
-  token_age_max_ms: [0, 1800000, 3600000, 7200000, 14400000, 43200000, 86400000],
+  token_age_max_ms: [0, 1800000, 3600000],
+  min_holder_growth_pct: [0, 10, 25, 50, 100, 200],
+  min_buy_sell_ratio: [0, 1, 1.2, 1.5, 2, 3],
 };
 
 function formatStratValue(key, value) {
