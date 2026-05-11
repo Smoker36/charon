@@ -39,11 +39,15 @@ export function menuKeyboard() {
         ],
         [
           { text: 'Positions', callback_data: 'menu:positions' },
-          { text: 'Filters', callback_data: 'menu:filters' },
+          { text: 'History Trade', callback_data: 'menu:historytrade' },
         ],
         [
           { text: 'Wallets', callback_data: 'menu:wallets' },
+          { text: 'Filters', callback_data: 'menu:filters' },
           { text: 'PnL', callback_data: 'menu:pnl' },
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
+        [
           { text: 'Learning', callback_data: 'menu:learn' },
         ],
       ],
@@ -217,42 +221,49 @@ export function walletsText() {
   return `👛 <b>Saved Wallets</b>\n\n${body}`;
 }
 
-export function positionsText({ showInactive = true } = {}) {
+export function positionsText() {
   const active = openPositions();
-  const inactive = showInactive ? inactivePositions(12) : [];
-  const inactiveCount = inactivePositionCount();
-
   const lines = [
-    '📍 <b>Positions</b>',
+    '📍 <b>Active Positions</b>',
     '',
-    `🟢 <b>Active Positions</b> (${active.length})`,
+    `🟢 <b>Total</b>: ${active.length}`,
   ];
-
-  const activeSection = fitPositionSection(active, formatPosition, 'No active positions.', 2200);
+  const activeSection = fitPositionSection(active, formatPosition, 'No active positions.', 3000);
   lines.push(activeSection.text);
   if (activeSection.hiddenCount > 0) {
     lines.push(`<i>${activeSection.hiddenCount} active position(s) hidden to avoid Telegram message limit.</i>`);
   }
-
-  if (showInactive) {
-    lines.push('', `⚪ <b>Inactive Positions</b> (${inactiveCount})`);
-    const inactiveSection = fitPositionSection(inactive, formatPosition, 'No inactive positions yet.', 1300);
-    lines.push(inactiveSection.text);
-    if (inactiveSection.hiddenCount > 0) {
-      lines.push(`<i>${inactiveSection.hiddenCount} inactive position(s) hidden to avoid Telegram message limit.</i>`);
-    }
-  } else {
-    lines.push('', `⚪ <b>Inactive Positions hidden</b> (${inactiveCount})`);
-  }
-
-  const text = lines.join('\n');
+  const text = lines.join('
+');
   if (text.length <= TELEGRAM_MESSAGE_SAFE_LIMIT) return text;
-  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}\n\n<i>Output truncated to fit Telegram limit.</i>`;
+  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}
+
+<i>Output truncated to fit Telegram limit.</i>`;
 }
 
-export function positionsKeyboard({ showInactive = true } = {}) {
-  const active = openPositions().slice(0, 8);
-  const inactive = showInactive ? inactivePositions(6) : [];
+export function historyTradeText() {
+  const inactive = inactivePositions(20);
+  const inactiveCount = inactivePositionCount();
+  const lines = [
+    '📚 <b>Trade History</b>',
+    '',
+    `⚪ <b>Closed Positions</b>: ${inactiveCount}`,
+  ];
+  const inactiveSection = fitPositionSection(inactive, formatPosition, 'No trade history yet.', 3000);
+  lines.push(inactiveSection.text);
+  if (inactiveSection.hiddenCount > 0) {
+    lines.push(`<i>${inactiveSection.hiddenCount} closed position(s) hidden to avoid Telegram message limit.</i>`);
+  }
+  const text = lines.join('
+');
+  if (text.length <= TELEGRAM_MESSAGE_SAFE_LIMIT) return text;
+  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}
+
+<i>Output truncated to fit Telegram limit.</i>`;
+}
+
+export function positionsKeyboard() {
+  const active = openPositions().slice(0, 10);
   const keyboard = [];
   for (const position of active) {
     const label = position.symbol || short(position.mint);
@@ -261,21 +272,26 @@ export function positionsKeyboard({ showInactive = true } = {}) {
       { text: `Manual Sell #${position.id}`, callback_data: `sell:${position.id}` },
     ]);
   }
-  keyboard.push([{
-    text: showInactive ? 'Hide Inactive' : 'Show Inactive',
-    callback_data: showInactive ? 'menu:positions:hide_inactive' : 'menu:positions:show_inactive',
-  }]);
-  if (showInactive && inactive.length) {
-    keyboard.push([{ text: '── Inactive ──', callback_data: 'noop' }]);
-    for (const position of inactive) {
-      const label = position.symbol || short(position.mint);
-      keyboard.push([{ text: `View closed #${position.id} ${label}`, callback_data: `pos:${position.id}` }]);
-    }
+  keyboard.push([
+    { text: 'Refresh', callback_data: 'menu:positions' },
+    { text: 'History Trade', callback_data: 'menu:historytrade' },
+  ]);
+  keyboard.push([{ text: 'Back', callback_data: 'menu:main' }]);
+  return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+export function historyTradeKeyboard() {
+  const inactive = inactivePositions(10);
+  const keyboard = [];
+  for (const position of inactive) {
+    const label = position.symbol || short(position.mint);
+    keyboard.push([{ text: `View closed #${position.id} ${label}`, callback_data: `pos:${position.id}` }]);
   }
   keyboard.push([
-    { text: 'Refresh', callback_data: showInactive ? 'menu:positions' : 'menu:positions:hide_inactive' },
-    { text: 'Back', callback_data: 'menu:main' },
+    { text: 'Refresh', callback_data: 'menu:historytrade' },
+    { text: 'Active Positions', callback_data: 'menu:positions' },
   ]);
+  keyboard.push([{ text: 'Back', callback_data: 'menu:main' }]);
   return { reply_markup: { inline_keyboard: keyboard } };
 }
 
