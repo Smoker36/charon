@@ -182,7 +182,7 @@ const STRAT_PRESETS = {
   min_fee_claim_sol: [0, 0.5, 1, 2, 5, 10],
   min_gmgn_total_fee_sol: [0, 3, 5, 10, 20],
   max_ath_distance_pct: [0, -20, -30, -40, -50, -60],
-  token_age_max_ms: [0, 1800000, 3600000, 7200000, 14400000, 43200000, 86400000],
+  token_age_max_ms: [0, 1800000, 3600000],
 };
 
 function formatStratValue(key, value) {

@@ -63,6 +63,7 @@ export function filterCandidate(candidate) {
   const bundlerRate = Number(candidate.trending?.bundler_rate ?? 0);
   const chartAthDistance = Number(candidate.chart?.distanceFromAthPercent);
   const dexPaidEnabled = boolSetting('dex_paid', false);
+  const tokenAgeMs = Number(candidate.metrics.tokenAgeMs || 0);
 
   // Fee claim check
   if (candidate.feeClaim) {
@@ -115,6 +116,10 @@ export function filterCandidate(candidate) {
   }
 
   // ATH distance (dip buy strategy)
+  if (strat.token_age_max_ms > 0 && tokenAgeMs > 0 && tokenAgeMs > strat.token_age_max_ms) {
+    failures.push(`token age: ${(tokenAgeMs / 60000).toFixed(1)}m > ${(strat.token_age_max_ms / 60000).toFixed(1)}m`);
+  }
+
   if (strat.max_ath_distance_pct < 0) {
     const athDist = candidate.chart?.distanceFromAthPercent;
     if (athDist != null && athDist > strat.max_ath_distance_pct) {
@@ -213,6 +218,14 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
       trendingHotLevel: Number(trendingToken?.hot_level ?? 0),
       trendingSmartDegenCount: Number(trendingToken?.smart_degen_count ?? 0),
       dexPaid: detectDexPaid({ gmgn, graduatedCoin, trendingToken, jupiterAsset }),
+      tokenAgeMs: Number(firstPositiveNumber(
+        trendingToken?.ageMs,
+        trendingToken?.age_ms,
+        graduatedCoin?.ageMs,
+        graduatedCoin?.age_ms,
+        gmgn?.age_ms,
+        gmgn?.token_age_ms,
+      ) || 0),
     },
     signals: {
       route: signalRoute,
