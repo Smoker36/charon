@@ -59,6 +59,9 @@ export function menuKeyboard() {
         [
           { text: 'Learning', callback_data: 'menu:learn' },
         ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
+        ],
       ],
     },
   };

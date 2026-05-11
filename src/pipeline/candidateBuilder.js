@@ -6,6 +6,26 @@ import { fetchSavedWalletExposure } from '../enrichment/wallets.js';
 import { fetchTwitterNarrative } from '../enrichment/twitter.js';
 import { gmgnLink } from '../format.js';
 
+function detectDexPaid({ gmgn, graduatedCoin, trendingToken, jupiterAsset }) {
+  const values = [
+    gmgn?.dex_paid,
+    gmgn?.dexPaid,
+    gmgn?.is_dex_paid,
+    gmgn?.isDexPaid,
+    graduatedCoin?.dex_paid,
+    graduatedCoin?.dexPaid,
+    trendingToken?.dex_paid,
+    trendingToken?.dexPaid,
+    jupiterAsset?.dex_paid,
+    jupiterAsset?.dexPaid,
+  ];
+  for (const value of values) {
+    if (value === true || value === 1 || value === '1' || value === 'true' || value === 'yes') return true;
+    if (value === false || value === 0 || value === '0' || value === 'false' || value === 'no') return false;
+  }
+  return false;
+}
+
 export function buildFeeSnapshot(fee, signature) {
   return {
     mint: fee.mint,
@@ -42,6 +62,7 @@ export function filterCandidate(candidate) {
   const rugRatio = Number(candidate.trending?.rug_ratio ?? 0);
   const bundlerRate = Number(candidate.trending?.bundler_rate ?? 0);
   const chartAthDistance = Number(candidate.chart?.distanceFromAthPercent);
+  const dexPaidEnabled = boolSetting('dex_paid', false);
 
   // Fee claim check
   if (candidate.feeClaim) {
@@ -138,6 +159,10 @@ export function filterCandidate(candidate) {
     }
   }
 
+  if (dexPaidEnabled && !candidate.metrics.dexPaid) {
+    failures.push('dex paid: required but token is not flagged as paid');
+  }
+
   return { passed: failures.length === 0, failures, strategy: strat.id };
 }
 
@@ -187,6 +212,7 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
       trendingSwaps: Number(trendingToken?.swaps ?? 0),
       trendingHotLevel: Number(trendingToken?.hot_level ?? 0),
       trendingSmartDegenCount: Number(trendingToken?.smart_degen_count ?? 0),
+      dexPaid: detectDexPaid({ gmgn, graduatedCoin, trendingToken, jupiterAsset }),
     },
     signals: {
       route: signalRoute,
