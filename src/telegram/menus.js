@@ -6,19 +6,48 @@ import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
 import { ENABLE_LLM, LLM_API_KEY } from '../config.js';
 
+const TELEGRAM_MESSAGE_SAFE_LIMIT = 3800;
+
+function fitPositionSection(items, formatter, emptyText, maxChars) {
+  if (!items.length) return { text: emptyText, hiddenCount: 0 };
+  const rendered = [];
+  let used = 0;
+  let hiddenCount = 0;
+  for (const item of items) {
+    const chunk = formatter(item);
+    const add = (rendered.length ? 2 : 0) + chunk.length;
+    if (used + add > maxChars) {
+      hiddenCount += 1;
+      continue;
+    }
+    rendered.push(chunk);
+    used += add;
+  }
+  if (!rendered.length) {
+    return { text: `Too many details to display here. Open a position from buttons below.`, hiddenCount: items.length };
+  }
+  return { text: rendered.join('\n\n'), hiddenCount };
+}
+
 export function menuKeyboard() {
   return {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: 'Strategy', callback_data: 'menu:strategy' },
           { text: 'Agent', callback_data: 'menu:agent' },
-          { text: 'Filters', callback_data: 'menu:filters' },
+          { text: 'Strategy', callback_data: 'menu:strategy' },
+        ],
+        [
+          { text: 'Positions', callback_data: 'menu:positions' },
+          { text: 'History Trade', callback_data: 'menu:historytrade' },
         ],
         [
           { text: 'Wallets', callback_data: 'menu:wallets' },
-          { text: 'Positions', callback_data: 'menu:positions' },
+          { text: 'Filters', callback_data: 'menu:filters' },
           { text: 'PnL', callback_data: 'menu:pnl' },
+        ],
+        [
+          { text: 'Learning', callback_data: 'menu:learn' },
         ],
       ],
     },
@@ -43,6 +72,7 @@ export function filtersText() {
     `Fee required: ${strat.require_fee_claim ? 'yes' : 'no'}`,
     '',
     `Trending: <b>${boolSetting('trending_enabled', true) ? 'on' : 'off'}</b> · Source: <b>${escapeHtml(setting('trending_source', 'jupiter'))}</b>`,
+    `Dex Paid: <b>${boolSetting('dex_paid', false) ? 'on' : 'off'}</b>`,
     `GMGN status: token-info ${escapeHtml(gmgnStatusText('token'))} · trending ${escapeHtml(gmgnStatusText('trending'))}`,
     `Trending interval: ${escapeHtml(setting('trending_interval', '5m'))} · Limit: ${numSetting('trending_limit', 100)}`,
     `Min trend volume: ${fmtUsd(strat.trending_min_volume_usd)} · Min swaps: ${strat.trending_min_swaps}`,
@@ -106,6 +136,9 @@ export function filtersKeyboard() {
         [{ text: 'Configure in Strategy', callback_data: 'menu:strategy' }],
         [
           { text: 'Trend On/Off', callback_data: 'toggle:trending_enabled' },
+          { text: 'Dex Paid On/Off', callback_data: 'toggle:dex_paid' },
+        ],
+        [
           { text: 'Use Jupiter', callback_data: 'set:trending_source:jupiter' },
           { text: 'Use GMGN', callback_data: 'set:trending_source:gmgn' },
         ],
@@ -191,37 +224,43 @@ export function walletsText() {
   return `👛 <b>Saved Wallets</b>\n\n${body}`;
 }
 
-export function positionsText({ showInactive = true } = {}) {
+export function positionsText() {
   const active = openPositions();
-  const inactive = showInactive ? inactivePositions(12) : [];
-  const inactiveCount = inactivePositionCount();
-  const activeText = active.length
-    ? active.map(formatPosition).join('\n\n')
-    : 'No active positions.';
   const lines = [
-    '📍 <b>Positions</b>',
+    '📍 <b>Active Positions</b>',
     '',
-    `🟢 <b>Active Positions</b> (${active.length})`,
-    activeText,
+    `🟢 <b>Total</b>: ${active.length}`,
   ];
-  if (showInactive) {
-    const inactiveText = inactive.length
-      ? inactive.map(formatPosition).join('\n\n')
-      : 'No inactive positions yet.';
-    lines.push(
-      '',
-      `⚪ <b>Inactive Positions</b> (${inactiveCount})`,
-      inactiveText,
-    );
-  } else {
-    lines.push('', `⚪ <b>Inactive Positions hidden</b> (${inactiveCount})`);
+  const activeSection = fitPositionSection(active, formatPosition, 'No active positions.', 3000);
+  lines.push(activeSection.text);
+  if (activeSection.hiddenCount > 0) {
+    lines.push(`<i>${activeSection.hiddenCount} active position(s) hidden to avoid Telegram message limit.</i>`);
   }
-  return lines.join('\n');
+  const text = lines.join('\n');
+  if (text.length <= TELEGRAM_MESSAGE_SAFE_LIMIT) return text;
+  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}\n\n<i>Output truncated to fit Telegram limit.</i>`;
 }
 
-export function positionsKeyboard({ showInactive = true } = {}) {
-  const active = openPositions().slice(0, 8);
-  const inactive = showInactive ? inactivePositions(6) : [];
+export function historyTradeText() {
+  const inactive = inactivePositions(20);
+  const inactiveCount = inactivePositionCount();
+  const lines = [
+    '📚 <b>Trade History</b>',
+    '',
+    `⚪ <b>Closed Positions</b>: ${inactiveCount}`,
+  ];
+  const inactiveSection = fitPositionSection(inactive, formatPosition, 'No trade history yet.', 3000);
+  lines.push(inactiveSection.text);
+  if (inactiveSection.hiddenCount > 0) {
+    lines.push(`<i>${inactiveSection.hiddenCount} closed position(s) hidden to avoid Telegram message limit.</i>`);
+  }
+  const text = lines.join('\n');
+  if (text.length <= TELEGRAM_MESSAGE_SAFE_LIMIT) return text;
+  return `${text.slice(0, TELEGRAM_MESSAGE_SAFE_LIMIT - 80)}\n\n<i>Output truncated to fit Telegram limit.</i>`;
+}
+
+export function positionsKeyboard() {
+  const active = openPositions().slice(0, 10);
   const keyboard = [];
   for (const position of active) {
     const label = position.symbol || short(position.mint);
@@ -230,21 +269,26 @@ export function positionsKeyboard({ showInactive = true } = {}) {
       { text: `Manual Sell #${position.id}`, callback_data: `sell:${position.id}` },
     ]);
   }
-  keyboard.push([{
-    text: showInactive ? 'Hide Inactive' : 'Show Inactive',
-    callback_data: showInactive ? 'menu:positions:hide_inactive' : 'menu:positions:show_inactive',
-  }]);
-  if (showInactive && inactive.length) {
-    keyboard.push([{ text: '── Inactive ──', callback_data: 'noop' }]);
-    for (const position of inactive) {
-      const label = position.symbol || short(position.mint);
-      keyboard.push([{ text: `View closed #${position.id} ${label}`, callback_data: `pos:${position.id}` }]);
-    }
+  keyboard.push([
+    { text: 'Refresh', callback_data: 'menu:positions' },
+    { text: 'History Trade', callback_data: 'menu:historytrade' },
+  ]);
+  keyboard.push([{ text: 'Back', callback_data: 'menu:main' }]);
+  return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+export function historyTradeKeyboard() {
+  const inactive = inactivePositions(10);
+  const keyboard = [];
+  for (const position of inactive) {
+    const label = position.symbol || short(position.mint);
+    keyboard.push([{ text: `View closed #${position.id} ${label}`, callback_data: `pos:${position.id}` }]);
   }
   keyboard.push([
-    { text: 'Refresh', callback_data: showInactive ? 'menu:positions' : 'menu:positions:hide_inactive' },
-    { text: 'Back', callback_data: 'menu:main' },
+    { text: 'Refresh', callback_data: 'menu:historytrade' },
+    { text: 'Active Positions', callback_data: 'menu:positions' },
   ]);
+  keyboard.push([{ text: 'Back', callback_data: 'menu:main' }]);
   return { reply_markup: { inline_keyboard: keyboard } };
 }
 
@@ -278,10 +322,22 @@ export function strategyMenuText() {
 export function strategyKeyboard() {
   const strat = activeStrategy();
   const all = allStrategies();
-  const selector = all.map(s => [{
-    text: `${s.enabled ? '▶ ' : ''}${s.name}`,
-    callback_data: `strategy:select:${s.id}`,
-  }]);
+  const selector = [];
+  for (let i = 0; i < all.length; i += 2) {
+    const left = all[i];
+    const right = all[i + 1];
+    const row = [{
+      text: `${left.enabled ? '▶ ' : ''}${left.name}`,
+      callback_data: `strategy:select:${left.id}`,
+    }];
+    if (right) {
+      row.push({
+        text: `${right.enabled ? '▶ ' : ''}${right.name}`,
+        callback_data: `strategy:select:${right.id}`,
+      });
+    }
+    selector.push(row);
+  }
   const config = [
     [
       { text: `TP +${strat.tp_percent}%`, callback_data: 'stratinput:tp_percent' },
