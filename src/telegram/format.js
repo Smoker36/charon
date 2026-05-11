@@ -1,5 +1,6 @@
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short, gmgnLink, txLink, accountLink } from '../format.js';
 import { now } from '../utils.js';
+import { strategyById } from '../db/settings.js';
 
 export function formatRecipients(shareholders) {
   if (!shareholders?.length) return '';
@@ -124,6 +125,8 @@ export function formatPosition(position) {
   const peakPnl = position.entry_mcap && position.high_water_mcap
     ? (Number(position.high_water_mcap) / Number(position.entry_mcap) - 1) * 100
     : null;
+  const strat = position.strategy_id ? strategyById(position.strategy_id) : null;
+  const profitLockProgress = buildProfitLockProgress(strat, peakPnl);
   return [
     `📍 <b>${escapeHtml(position.symbol || short(position.mint))}</b> #${position.id}`,
     `Token: <a href="${gmgnLink(position.mint)}">${short(position.mint)}</a>`,
@@ -133,10 +136,24 @@ export function formatPosition(position) {
     `Entry mcap: ${fmtUsd(position.entry_mcap)} · High: ${fmtUsd(position.high_water_mcap)}`,
     `Size: ${fmtSol(position.size_sol)} SOL · ${isClosed ? 'Realized' : 'Current'}: ${fmtPct(pnl)}`,
     peakPnl != null ? `Peak: ${fmtPct(peakPnl)}` : null,
+    profitLockProgress,
     `TP: ${fmtPct(position.tp_percent)} · SL: ${fmtPct(position.sl_percent)} · Trail: ${position.trailing_enabled ? `${fmtPct(position.trailing_percent)}` : 'off'}`,
     position.exit_reason ? `Exit: ${escapeHtml(position.exit_reason)} at ${fmtUsd(position.exit_mcap)} (${fmtPct(position.pnl_percent)})` : null,
     position.exit_signature ? `Exit TX: <a href="${txLink(position.exit_signature)}">${short(position.exit_signature)}</a>` : null,
   ].filter(Boolean).join('\n');
+}
+
+function buildProfitLockProgress(strat, peakPnl) {
+  if (!strat?.profit_lock_enabled) return null;
+  if (peakPnl == null) return 'Profit Lock: enabled (waiting for peak data)';
+  const t1 = Number(strat.profit_lock_trigger_1_percent ?? 15);
+  const t2 = Number(strat.profit_lock_trigger_2_percent ?? 40);
+  const t3 = Number(strat.profit_lock_trigger_3_percent ?? 80);
+  const reached =
+    peakPnl >= t3 ? 3 :
+    peakPnl >= t2 ? 2 :
+    peakPnl >= t1 ? 1 : 0;
+  return `Profit Lock: stage ${reached}/3 · triggers ${fmtPct(t1)} / ${fmtPct(t2)} / ${fmtPct(t3)}`;
 }
 
 export function compactDecisionCandidate(row) {
