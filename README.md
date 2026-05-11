@@ -140,6 +140,9 @@ Use `/menu → Strategy` or commands:
 /strategy degen
 /strategy profit_lock
 /stratset sniper tp_percent 75
+/stratset sniper fee_mcap_divisor 5
+/stratset sniper migrated_buy_max_ath_distance_pct -40
+/stratset sniper volume_to_mcap_min_ratio 10
 ```
 
 Default strategies:
@@ -154,6 +157,11 @@ Default strategies:
   - high PnL `>= +80%` locks floor at `max(+50%, highPnL - 30%)`
 
 Strategy settings are stored in SQLite and hot-read. Menu changes apply without restart.
+
+Additional optional filter knobs:
+- `fee_mcap_divisor`: require `gmgnTotalFees >= marketCap / fee_mcap_divisor` (set `0` to disable).
+- `migrated_buy_max_ath_distance_pct`: for migrated/graduated coins only, require ATH distance to be at/below this negative threshold (e.g. `-40`).
+- `volume_to_mcap_min_ratio`: require `max(trendingVolumeUsd, graduatedVolumeUsd) / marketCapUsd >= ratio`.
 
 ## Telegram Commands
 

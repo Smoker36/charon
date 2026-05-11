@@ -240,6 +240,9 @@ export function initDb() {
     trending_min_swaps: process.env.TRENDING_MIN_SWAPS || '0',
     trending_max_rug_ratio: process.env.TRENDING_MAX_RUG_RATIO || '0.3',
     trending_max_bundler_rate: process.env.TRENDING_MAX_BUNDLER_RATE || '0.5',
+    fee_mcap_divisor: process.env.FEE_MCAP_DIVISOR || '0',
+    migrated_buy_max_ath_distance_pct: process.env.MIGRATED_BUY_MAX_ATH_DISTANCE_PCT || '0',
+    volume_to_mcap_min_ratio: process.env.VOLUME_TO_MCAP_MIN_RATIO || '0',
   };
   const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [key, value] of Object.entries(defaults)) insert.run(key, value);

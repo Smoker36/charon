@@ -41,6 +41,7 @@ export function filterCandidate(candidate) {
   const trendingSwaps = Number(candidate.trending?.swaps ?? 0);
   const rugRatio = Number(candidate.trending?.rug_ratio ?? 0);
   const bundlerRate = Number(candidate.trending?.bundler_rate ?? 0);
+  const chartAthDistance = Number(candidate.chart?.distanceFromAthPercent);
 
   // Fee claim check
   if (candidate.feeClaim) {
@@ -63,6 +64,12 @@ export function filterCandidate(candidate) {
   // GMGN fees — only enforce when GMGN data is available; Jupiter has no equivalent
   if (strat.min_gmgn_total_fee_sol > 0 && candidate.gmgn !== null && totalFees < strat.min_gmgn_total_fee_sol) {
     failures.push(`GMGN total fees: ${totalFees} < ${strat.min_gmgn_total_fee_sol}`);
+  }
+  if (strat.fee_mcap_divisor > 0 && candidate.gmgn !== null && Number.isFinite(mcap) && mcap > 0) {
+    const requiredFee = mcap / strat.fee_mcap_divisor;
+    if (totalFees < requiredFee) {
+      failures.push(`fee/mcap: ${totalFees.toFixed(2)} < required ${requiredFee.toFixed(2)} (mcap/${strat.fee_mcap_divisor})`);
+    }
   }
 
   // Graduated volume — only enforce when the token actually has graduated data
@@ -90,6 +97,22 @@ export function filterCandidate(candidate) {
     const athDist = candidate.chart?.distanceFromAthPercent;
     if (athDist != null && athDist > strat.max_ath_distance_pct) {
       failures.push(`ATH distance: ${athDist.toFixed(0)}% > target ${strat.max_ath_distance_pct}%`);
+    }
+  }
+  if (strat.migrated_buy_max_ath_distance_pct < 0 && candidate.graduation) {
+    if (Number.isFinite(chartAthDistance) && chartAthDistance > strat.migrated_buy_max_ath_distance_pct) {
+      failures.push(`migrated dump-buy: ATH distance ${chartAthDistance.toFixed(0)}% > target ${strat.migrated_buy_max_ath_distance_pct}%`);
+    }
+  }
+
+  const bestVolumeUsd = Math.max(
+    Number(candidate.metrics.trendingVolumeUsd || 0),
+    Number(candidate.metrics.graduatedVolumeUsd || 0),
+  );
+  if (strat.volume_to_mcap_min_ratio > 0 && Number.isFinite(mcap) && mcap > 0) {
+    const ratio = bestVolumeUsd / mcap;
+    if (!Number.isFinite(ratio) || ratio < strat.volume_to_mcap_min_ratio) {
+      failures.push(`volume/mcap ratio: ${ratio.toFixed(2)} < ${strat.volume_to_mcap_min_ratio}`);
     }
   }
 
