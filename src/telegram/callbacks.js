@@ -13,6 +13,8 @@ import {
   walletsText,
   positionsText,
   positionsKeyboard,
+  historyTradeText,
+  historyTradeKeyboard,
   candidateButtons,
   sendTpSlDefaults,
   strategyMenuText,
@@ -53,11 +55,14 @@ export async function handleCallback(query) {
   if (data === 'menu:filters') return editMenuMessage(query, filtersText(), filtersKeyboard());
   if (data === 'menu:strategy') return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
   if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
-  if (data.startsWith('menu:positions')) {
-    const showInactive = data !== 'menu:positions:hide_inactive';
-    return editMenuMessage(query, positionsText({ showInactive }), positionsKeyboard({ showInactive }));
+  if (data === 'menu:positions') {
+    return editMenuMessage(query, positionsText(), positionsKeyboard());
+  }
+  if (data === 'menu:historytrade') {
+    return editMenuMessage(query, historyTradeText(), historyTradeKeyboard());
   }
   if (data === 'menu:pnl') return sendPnl(chatId, query);
+  if (data === 'menu:learn') return editMenuMessage(query, '🧠 <b>Learning</b>\nUse <code>/learn 7d</code> to generate lessons and <code>/lessons</code> to view saved lessons.', navKeyboard());
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
       { text: 'Agent', callback_data: 'menu:agent' },
