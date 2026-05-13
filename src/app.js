@@ -66,6 +66,17 @@ export async function startCharon() {
     log('bot', `Smart wallet auto-refresh every ${Math.round(smartRefreshMs / 60000)}m`);
   }
 
+  // Smart wallet buy monitor: watch smart/KOL wallet transactions and trigger pipeline
+  const { monitorWalletBuys, setCandidateHandler: setWalletHandler } = await import('./signals/walletMonitor.js');
+  setWalletHandler(processCandidateFromSignals);
+  const walletMonitorMs = ns('smart_wallet_monitor_ms', 0);
+  if (walletMonitorMs > 0) {
+    // Prime cursors on startup (first call just records latest signatures, doesn't trigger pipeline)
+    await monitorWalletBuys().catch(err => log('wallet-monitor', `prime failed: ${err.message}`));
+    setInterval(() => monitorWalletBuys().catch(err => log('wallet-monitor', err.message)), walletMonitorMs);
+    log('bot', `Wallet buy monitor active — polling every ${Math.round(walletMonitorMs / 1000)}s`);
+  }
+
   // Position monitoring runs in both modes
   const trackPositions = makeFailureTracker('position monitor', (msg) => sendTelegram(msg));
   setInterval(() => trackPositions(() => monitorPositions()), POSITION_CHECK_MS);

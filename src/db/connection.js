@@ -232,6 +232,7 @@ export function initDb() {
     min_smart_wallet_holders: '0',
     min_kol_holders: '0',
     smart_wallet_auto_refresh_ms: '0',
+    smart_wallet_monitor_ms: '0',
     gmgn_request_delay_ms: process.env.GMGN_REQUEST_DELAY_MS || '2500',
     gmgn_max_retries: process.env.GMGN_MAX_RETRIES || '2',
     trending_enabled: process.env.TRENDING_ENABLED || 'true',

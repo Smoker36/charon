@@ -31,6 +31,7 @@ import { consumeNumericFilterInput } from './input.js';
 import { runLearning, sendLessons } from '../learning/commands.js';
 import { fetchWalletPnl } from '../enrichment/wallets.js';
 import { autoImportWallets, purgeAutoWallets, autoWalletCount } from '../enrichment/smartWalletImport.js';
+import { walletMonitorStats } from '../signals/walletMonitor.js';
 
 export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
@@ -138,6 +139,40 @@ export async function handleMessage(msg) {
     } catch (err) {
       return bot.sendMessage(chatId, `❌ Import failed: ${escapeHtml(err.message)}`, { parse_mode: 'HTML' });
     }
+  }
+  if (text.startsWith('/walletmonitor')) {
+    const parts = text.split(/\s+/);
+    const intervalArg = parts[1]; // e.g. "30s", "60s", "off"
+    if (intervalArg) {
+      let ms = 0;
+      if (intervalArg !== 'off') {
+        const match = intervalArg.match(/^(\d+)(s|m)?$/);
+        if (match) {
+          ms = Number(match[1]) * (match[2] === 'm' ? 60000 : 1000);
+          ms = Math.max(10_000, ms); // minimum 10s
+        } else {
+          return bot.sendMessage(chatId, 'Usage: /walletmonitor [30s|60s|5m|off]');
+        }
+      }
+      setSetting('smart_wallet_monitor_ms', String(ms));
+      await bot.sendMessage(chatId, ms > 0
+        ? `✅ Wallet monitor set to every ${Math.round(ms / 1000)}s.\n<i>Restart bot to apply.</i>`
+        : `⏹ Wallet monitor disabled.\n<i>Restart bot to apply.</i>`,
+        { parse_mode: 'HTML' }
+      );
+    }
+    const stats = walletMonitorStats();
+    const monitorMs = numSetting('smart_wallet_monitor_ms', 0);
+    return bot.sendMessage(chatId, [
+      `📡 <b>Wallet Buy Monitor</b>`,
+      `Status: <b>${monitorMs > 0 ? `active (${Math.round(monitorMs / 1000)}s)` : 'off'}</b>`,
+      `Monitoring: ${stats.monitoring} wallets`,
+      `Cursors set: ${stats.cursors}`,
+      `Seen txns: ${stats.seenTxns}`,
+      ``,
+      `Use /walletmonitor 30s to enable (min 10s)`,
+      `Use /walletmonitor off to disable`,
+    ].join('\n'), { parse_mode: 'HTML' });
   }
   if (text.startsWith('/smartpurge')) {
     const kindArg = text.split(/\s+/)[1];
@@ -300,6 +335,7 @@ export function setupTelegram() {
     { command: 'wallets', description: 'List saved wallets' },
     { command: 'smartimport', description: 'Auto-import smart wallets [gmgn|jupiter] [smartwallet|kol] [limit] [7d] [replace]' },
     { command: 'smartpurge', description: 'Remove auto-imported wallets [smartwallet|kol]' },
+    { command: 'walletmonitor', description: 'Show/set wallet buy monitor interval (30s|60s|5m|off)' },
   ]).catch(err => console.log(`[telegram] commands ${err.message}`));
 
   bot.on('callback_query', query => handleCallback(query).catch(err => console.log(`[callback] ${err.message}`)));

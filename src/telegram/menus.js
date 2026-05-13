@@ -2,6 +2,7 @@ import { escapeHtml, fmtPct, fmtSol, fmtUsd, short } from '../format.js';
 import { numSetting, boolSetting, setting, activeStrategy, allStrategies } from '../db/settings.js';
 import { openPositionCount, tradingMode, openPositions, inactivePositions, inactivePositionCount, topPerformingPositions, pnlByStrategy } from '../db/positions.js';
 import { autoWalletCount } from '../enrichment/smartWalletImport.js';
+import { walletMonitorStats } from '../signals/walletMonitor.js';
 import { savedWallets } from '../enrichment/wallets.js';
 import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
@@ -250,9 +251,12 @@ export function walletsText() {
 }
 
 export function walletsKeyboard() {
+  const stats = walletMonitorStats();
+  const monitorLabel = stats.cursors > 0 ? `📡 Monitor ON (${stats.monitoring})` : `📡 Monitor OFF`;
   return {
     reply_markup: {
       inline_keyboard: [
+        [{ text: monitorLabel, callback_data: 'walletmonitor:status' }],
         [
           { text: '⬇ Import Smart (GMGN 7d)', callback_data: 'smartimport:gmgn:smartwallet:50:7d' },
           { text: '⬇ Import KOL (GMGN 7d)', callback_data: 'smartimport:gmgn:kol:50:7d' },

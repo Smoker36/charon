@@ -67,6 +67,20 @@ export async function handleCallback(query) {
   }
   if (data === 'menu:pnl') return sendPnl(chatId, query);
   if (data === 'menu:toppnl') return editMenuMessage(query, topPnlText('pnl_percent', 'all', '30d'), topPnlKeyboard('pnl_percent', 'all', '30d'));
+  if (data === 'walletmonitor:status') {
+    const { walletMonitorStats } = await import('../signals/walletMonitor.js');
+    const stats = walletMonitorStats();
+    const { numSetting: ns } = await import('../db/settings.js');
+    const monitorMs = ns('smart_wallet_monitor_ms', 0);
+    return bot.sendMessage(chatId, [
+      `📡 <b>Wallet Buy Monitor</b>`,
+      `Status: <b>${monitorMs > 0 ? `active (every ${Math.round(monitorMs / 1000)}s)` : 'off'}</b>`,
+      `Watching: ${stats.monitoring} wallets · Cursors: ${stats.cursors}`,
+      ``,
+      `To enable: /walletmonitor 30s`,
+      `To disable: /walletmonitor off`,
+    ].join('\n'), { parse_mode: 'HTML' });
+  }
   if (data.startsWith('smartimport:')) {
     const [, source, kind, limitStr, period] = data.split(':');
     await bot.answerCallbackQuery(query.id, { text: `Importing ${source} ${kind}…` }).catch(() => {});
