@@ -38,9 +38,6 @@ export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
   const chatId = msg.chat.id;
 
-  // Security: only respond to the configured chat
-  if (String(chatId) !== String(TELEGRAM_CHAT_ID)) return;
-
   if (await consumeNumericFilterInput(chatId, text, msg.message_id)) return;
 
   // Free-form chat — route non-command messages to LLM agent
