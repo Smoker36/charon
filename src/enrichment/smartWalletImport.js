@@ -1,17 +1,26 @@
 import { db } from '../db/connection.js';
-import { now, log, logError } from '../utils.js';
-import { gmgnFetch } from './gmgn.js';
+import { now, log, logError, sleep } from '../utils.js';
 import { JSON_HEADERS } from '../config.js';
 
-// Auto-imported wallets use a label prefix so they can be purged cleanly
 const AUTO_PREFIX = 'auto';
 
-// GMGN tries multiple endpoints — different API versions expose smart money differently
-const GMGN_ENDPOINTS = [
-  ['/v1/smartmoney/sol/wallets', { orderby: 'realized_profit', direction: 'desc' }],
-  ['/v1/stat/sol/top_traders',   { orderby: 'pnl', direction: 'desc' }],
-  ['/v1/smartmoney/sol/wallet_list', { tag: 'pump_smart_degen', orderby: 'realized_profit', direction: 'desc' }],
+// GMGN smart money list is on their quotation (frontend) API, not openapi.gmgn.ai
+const GMGN_QUOTATION_ENDPOINTS = [
+  'https://gmgn.ai/defi/quotation/v1/smartmoney/sol/wallets',
+  'https://gmgn.ai/defi/quotation/v1/rank/sol/wallets/7d',
+  'https://gmgn.ai/defi/quotation/v1/rank/sol/swaps/7d',
 ];
+
+async function fetchUrl(url, params = {}) {
+  const u = new URL(url);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, String(v));
+  const res = await fetch(u.toString(), {
+    headers: JSON_HEADERS,
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
 
 function extractWalletRows(payload) {
   const candidates = [
@@ -37,34 +46,31 @@ function resolveKindFromRow(row, defaultKind) {
 }
 
 async function fetchGmgnTopTraders({ limit = 50, period = '7d' } = {}) {
-  for (const [endpoint, extra] of GMGN_ENDPOINTS) {
+  for (const endpoint of GMGN_QUOTATION_ENDPOINTS) {
     try {
-      const payload = await gmgnFetch(endpoint, {
-        params: { limit, period, ...extra },
+      const payload = await fetchUrl(endpoint, {
+        limit,
+        period,
+        orderby: 'realized_profit',
+        direction: 'desc',
       });
       const rows = extractWalletRows(payload);
       if (rows.length > 0) {
-        log('smartwallet', `GMGN ${endpoint} returned ${rows.length} wallets`);
+        log('smartwallet', `GMGN ${new URL(endpoint).pathname} returned ${rows.length} wallets`);
         return rows;
       }
     } catch (err) {
-      log('smartwallet', `GMGN ${endpoint} failed: ${err.message}`);
+      log('smartwallet', `GMGN ${new URL(endpoint).pathname} failed: ${err.message}`);
+      await sleep(500);
     }
   }
   return [];
 }
 
-// Jupiter doesn't expose a public top-traders leaderboard, but we can enrich
-// known wallets using the PnL API. For now the jupiter source is a no-op
-// that returns [] — it's wired here so the UI can show the option without crashing.
 async function fetchJupiterTopTraders({ limit = 50 } = {}) {
   try {
-    const url = new URL('https://datapi.jup.ag/v1/leaderboard');
-    url.searchParams.set('limit', String(limit));
-    const res = await fetch(url.toString(), { headers: JSON_HEADERS, signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const rows = extractWalletRows(data);
+    const payload = await fetchUrl('https://datapi.jup.ag/v1/leaderboard', { limit });
+    const rows = extractWalletRows(payload);
     log('smartwallet', `Jupiter leaderboard returned ${rows.length} wallets`);
     return rows;
   } catch {

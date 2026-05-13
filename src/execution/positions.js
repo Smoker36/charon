@@ -253,6 +253,42 @@ export async function refreshPosition(position, { autoExit = true, jupiterPnl = 
   };
 }
 
+export async function forceClosePosition(positionId, exitReason) {
+  const position = db.prepare('SELECT * FROM dry_run_positions WHERE id = ? AND status = ?').get(positionId, 'open');
+  if (!position) return null;
+  if (sellInProgress.has(positionId)) return null;
+  sellInProgress.add(positionId);
+  try {
+    const asset = await fetchJupiterAsset(position.mint);
+    const price = firstPositiveNumber(asset?.usdPrice, position.high_water_price, position.entry_price);
+    const mcap = firstPositiveNumber(asset?.mcap, asset?.fdv, position.high_water_mcap, position.entry_mcap);
+    let pnlPercent = Number(position.entry_mcap) > 0 ? (Number(mcap) / Number(position.entry_mcap) - 1) * 100 : 0;
+    let pnlSol = Number(position.size_sol) * pnlPercent / 100;
+    let sell = null;
+    if (position.execution_mode === 'live') {
+      sell = await executeLiveSell(position, exitReason);
+      const receivedSol = Number(sell?.outputAmount || 0) / 1e9;
+      if (receivedSol > 0) {
+        pnlSol = receivedSol - Number(position.size_sol);
+        pnlPercent = (receivedSol / Number(position.size_sol) - 1) * 100;
+      }
+    }
+    db.prepare(`
+      UPDATE dry_run_positions
+      SET status = 'closed', closed_at_ms = ?, exit_price = ?, exit_mcap = ?, exit_reason = ?,
+          pnl_percent = ?, pnl_sol = ?, exit_signature = ?
+      WHERE id = ?
+    `).run(now(), price, mcap, exitReason, pnlPercent, pnlSol, sell?.signature || null, positionId);
+    db.prepare(`
+      INSERT INTO dry_run_trades (position_id, mint, side, at_ms, price, mcap, size_sol, token_amount_est, reason, payload_json)
+      VALUES (?, ?, 'sell', ?, ?, ?, ?, ?, ?, ?)
+    `).run(positionId, position.mint, now(), price, mcap, position.size_sol, position.token_amount_est, exitReason, json({ pnlPercent, pnlSol, sell }));
+    return { ...position, status: 'closed', exitReason, price, mcap, pnlPercent, pnl_percent: pnlPercent, pnlSol, pnl_sol: pnlSol };
+  } finally {
+    sellInProgress.delete(positionId);
+  }
+}
+
 export async function monitorPositions() {
   const positions = openPositions();
   let walletPnlData = {};

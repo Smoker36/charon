@@ -5,8 +5,8 @@ import { storeDecision, storeBatchDecision, logDecisionEvent } from '../db/decis
 import { buildCandidate, filterCandidate, signalLabel } from './candidateBuilder.js';
 import { decideCandidateBatch } from './llm.js';
 import { activeStrategy } from '../db/settings.js';
-import { createDryRunPosition, createLivePosition, canOpenMorePositions, openPositionCount, tradingMode } from '../db/positions.js';
-import { sendBatchReveal, sendTelegram, sendPositionOpen, sendTradeIntent } from '../telegram/send.js';
+import { createDryRunPosition, createLivePosition, canOpenMorePositions, openPositionCount, tradingMode, openPositions, forceClosePosition } from '../db/positions.js';
+import { sendBatchReveal, sendTelegram, sendPositionOpen, sendTradeIntent, sendPositionExit } from '../telegram/send.js';
 import { candidateSummary } from '../telegram/format.js';
 import { createTradeIntent } from '../db/intents.js';
 import { refreshCandidateForExecution } from '../execution/positions.js';
@@ -232,6 +232,27 @@ export async function handleApprovedBuy(selectedRow, decision, batchId, rows = [
       `Intent #${intentId} stored.`,
       `Error: ${escapeHtml(err.message)}`,
     ].join('\n'));
+  }
+}
+
+export async function handleSmartWalletSell({ mint, wallet }) {
+  const positions = openPositions().filter(p => p.mint === mint);
+  if (!positions.length) return;
+  log('agent', `${wallet.kind} ${wallet.label} sold ${mint.slice(0, 8)} — force-closing ${positions.length} position(s)`);
+  for (const position of positions) {
+    try {
+      const exitReason = `SMART_WALLET_SELL:${wallet.label}`;
+      const result = await forceClosePosition(position.id, exitReason);
+      if (result) {
+        await sendPositionExit(result);
+        await sendTelegram(
+          `📤 <b>Smart wallet exit</b> — <b>${escapeHtml(wallet.kind)}</b> <code>${escapeHtml(wallet.label)}</code> sold\n` +
+          `Position #${position.id} ${escapeHtml(position.symbol || short(mint))} closed at ${result.pnlPercent >= 0 ? '+' : ''}${result.pnlPercent?.toFixed(1)}%`
+        );
+      }
+    } catch (err) {
+      logError('agent', `smart wallet sell exit pos ${position.id}: ${err.message}`);
+    }
   }
 }
 

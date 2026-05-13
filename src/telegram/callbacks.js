@@ -106,7 +106,34 @@ export async function handleCallback(query) {
     const [, orderBy, mode, window] = parts;
     return editMenuMessage(query, topPnlText(orderBy, mode, window), topPnlKeyboard(orderBy, mode, window));
   }
-  if (data === 'menu:learn') return editMenuMessage(query, '🧠 <b>Learning</b>\nUse <code>/learn 7d</code> to generate lessons and <code>/lessons</code> to view saved lessons.', navKeyboard());
+  if (data === 'menu:learn') {
+    const text = [
+      '🧠 <b>Learning</b>',
+      '',
+      'Generate lessons from your trade history:',
+      '• <code>/learn 7d</code> — general learning from dry-run outcomes',
+      '• <code>/learnsmartdegen 7d</code> — correlate SmartDegen count with PnL to tune <code>min_smart_degen_count</code>',
+      '• <code>/lessons</code> — view active lessons',
+    ].join('\n');
+    return editMenuMessage(query, text, navKeyboard([
+      [
+        { text: '🧠 Learn (12h)', callback_data: 'learn:run:12h' },
+        { text: '🎰 SmartDegen (7d)', callback_data: 'learn:smartdegen:7d' },
+      ],
+    ]));
+  }
+  if (data.startsWith('learn:run:')) {
+    const windowArg = data.split(':')[2] || '12h';
+    const { runLearning } = await import('../learning/commands.js');
+    await runLearning(chatId, windowArg);
+    return null;
+  }
+  if (data.startsWith('learn:smartdegen:')) {
+    const windowArg = data.split(':')[2] || '7d';
+    const { runSmartDegenLearning } = await import('../learning/commands.js');
+    await runSmartDegenLearning(chatId, windowArg);
+    return null;
+  }
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
       { text: 'Agent', callback_data: 'menu:agent' },
@@ -231,6 +258,8 @@ const STRAT_PRESETS = {
   min_buy_sell_ratio: [0, 1, 1.2, 1.5, 2, 3],
   min_smart_wallet_holders: [0, 1, 2, 3, 5],
   min_kol_holders: [0, 1, 2, 3, 5],
+  min_smart_degen_count: [0, 1, 2, 3, 5, 10],
+  max_dev_sold_pct: [0, 20, 30, 50, 70, 90],
 };
 
 function formatStratValue(key, value) {
@@ -250,7 +279,7 @@ async function handleStratConfig(query, chatId, key) {
   delete newConfig.name;
 
   // Boolean toggles
-  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim', 'profit_lock_enabled']);
+  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim', 'profit_lock_enabled', 'require_dev_holding']);
   if (boolKeys.has(key)) {
     newConfig[key] = !strat[key];
     if (key === 'profit_lock_enabled' && newConfig[key]) {
