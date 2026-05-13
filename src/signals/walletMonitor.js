@@ -8,6 +8,9 @@ import { trending, storeSignalEvent } from './trending.js';
 let candidateHandler = null;
 export function setCandidateHandler(fn) { candidateHandler = fn; }
 
+let sellSignalHandler = null;
+export function setSellSignalHandler(fn) { sellSignalHandler = fn; }
+
 // Per-wallet cursor: last seen signature used as Helius pagination "before" param
 const walletCursors = new Map();
 // Global dedup: signature → timestamp, pruned every 30m
@@ -31,6 +34,22 @@ async function fetchRecentSwaps(walletAddress, cursor = null) {
   if (res.status === 429) throw Object.assign(new Error('Helius rate limited'), { rateLimited: true });
   if (!res.ok) throw new Error(`Helius ${res.status}`);
   return res.json();
+}
+
+// Return mints sent FROM walletAddress in this swap tx (i.e. tokens sold)
+function extractSoldMints(tx, walletAddress) {
+  const mints = new Set();
+  for (const t of tx.tokenTransfers || []) {
+    if (
+      t.fromUserAccount === walletAddress &&
+      t.mint &&
+      !IGNORED_MINTS.has(t.mint) &&
+      Number(t.tokenAmount || 0) > 0
+    ) {
+      mints.add(t.mint);
+    }
+  }
+  return [...mints];
 }
 
 // Return mints received by walletAddress in this swap tx (i.e. tokens bought)
@@ -84,6 +103,17 @@ async function processWallet(wallet) {
     const boughtMints = extractBoughtMints(tx, address);
     for (const mint of boughtMints) {
       await triggerForMint(mint, wallet, tx.signature);
+    }
+
+    const soldMints = extractSoldMints(tx, address);
+    for (const mint of soldMints) {
+      if (!sellSignalHandler) continue;
+      log('wallet-monitor', `${kind} ${label.slice(0, 12)} SOLD ${mint.slice(0, 8)} → checking positions`);
+      try {
+        await sellSignalHandler({ mint, wallet, signature: tx.signature });
+      } catch (err) {
+        logError('wallet-monitor', `sell handler ${mint.slice(0, 8)}: ${err.message}`);
+      }
     }
   }
 }

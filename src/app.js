@@ -4,7 +4,7 @@ import { initDb } from './db/connection.js';
 import { initLiveExecution } from './liveExecutor.js';
 import { setupTelegram } from './telegram/commands.js';
 import { monitorPositions } from './execution/positions.js';
-import { processCandidateFromSignals, maybeProcessDegenCandidate } from './pipeline/orchestrator.js';
+import { processCandidateFromSignals, maybeProcessDegenCandidate, handleSmartWalletSell } from './pipeline/orchestrator.js';
 import { sendTelegram } from './telegram/send.js';
 import { makeFailureTracker, log } from './utils.js';
 
@@ -67,8 +67,9 @@ export async function startCharon() {
   }
 
   // Smart wallet buy monitor: watch smart/KOL wallet transactions and trigger pipeline
-  const { monitorWalletBuys, setCandidateHandler: setWalletHandler } = await import('./signals/walletMonitor.js');
+  const { monitorWalletBuys, setCandidateHandler: setWalletHandler, setSellSignalHandler } = await import('./signals/walletMonitor.js');
   setWalletHandler(processCandidateFromSignals);
+  setSellSignalHandler(handleSmartWalletSell);
   const walletMonitorMs = ns('smart_wallet_monitor_ms', 0);
   if (walletMonitorMs > 0) {
     // Prime cursors on startup (first call just records latest signatures, doesn't trigger pipeline)

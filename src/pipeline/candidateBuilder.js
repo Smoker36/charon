@@ -4,6 +4,7 @@ import { fetchGmgnTokenInfo } from '../enrichment/gmgn.js';
 import { fetchJupiterAsset, fetchJupiterHolders, fetchJupiterChartContext } from '../enrichment/jupiter.js';
 import { fetchSavedWalletExposure } from '../enrichment/wallets.js';
 import { fetchTwitterNarrative } from '../enrichment/twitter.js';
+import { extractDevAddress, checkDevHolding } from '../enrichment/devWallet.js';
 import { gmgnLink } from '../format.js';
 
 function detectDexPaid({ gmgn, graduatedCoin, trendingToken, jupiterAsset }) {
@@ -174,6 +175,17 @@ export function filterCandidate(candidate) {
     failures.push(`KOL holders: ${kolCount} < ${strat.min_kol_holders}`);
   }
 
+  // Dev wallet checks
+  const dev = candidate.devWallet;
+  if (dev) {
+    if (strat.require_dev_holding && !dev.isHolding) {
+      failures.push(`dev wallet: not holding (dumped)`);
+    }
+    if (strat.max_dev_sold_pct > 0 && dev.soldPercent != null && dev.soldPercent > strat.max_dev_sold_pct) {
+      failures.push(`dev wallet: sold ${dev.soldPercent.toFixed(0)}% > max ${strat.max_dev_sold_pct}%`);
+    }
+  }
+
   // ATH distance (dip buy strategy)
   if (strat.token_age_max_ms > 0) {
     if (tokenAgeMs <= 0) {
@@ -248,6 +260,8 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
   const chart = await fetchJupiterChartContext(mint);
   const savedWalletExposure = await fetchSavedWalletExposure(mint, holders);
   const twitterNarrative = await fetchTwitterNarrative(graduatedCoin || jupiterAsset, gmgn);
+  const devAddress = extractDevAddress({ graduatedCoin, gmgn, jupiterAsset });
+  const devWallet = checkDevHolding(devAddress, holders, gmgn);
   const priceUsd = firstPositiveNumber(tokenPriceFromGmgn(gmgn), jupiterAsset?.usdPrice, trendingToken?.price);
   const marketCapUsd = firstPositiveNumber(
     marketCapFromGmgn(gmgn),
@@ -317,6 +331,7 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
     holders,
     chart,
     savedWalletExposure,
+    devWallet,
     twitterNarrative,
     walletSignal,
     createdAtMs: now(),

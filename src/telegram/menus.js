@@ -68,6 +68,8 @@ export function filtersText() {
     `Min saved holders: ${strat.min_saved_wallet_holders || 'off'}`,
     `Min smart wallet holders: ${strat.min_smart_wallet_holders || 'off'}`,
     `Min KOL holders: ${strat.min_kol_holders || 'off'}`,
+    `Dev holding required: ${strat.require_dev_holding ? 'yes' : 'no'}`,
+    `Max dev sold: ${strat.max_dev_sold_pct > 0 ? `${strat.max_dev_sold_pct}%` : 'off'}`,
     strat.max_ath_distance_pct < 0 ? `Max ATH distance: ${strat.max_ath_distance_pct}%` : null,
     '',
     `Min sources: ${strat.min_source_count}`,
@@ -108,6 +110,7 @@ export const strategyNumericLabels = {
   min_saved_wallet_holders: 'minimum saved-wallet holders',
   min_smart_wallet_holders: 'minimum smart-wallet holders',
   min_kol_holders: 'minimum KOL holders',
+  max_dev_sold_pct: 'maximum dev wallet sold percent (0 = off)',
   max_ath_distance_pct: 'maximum ATH distance percent (-40 = 40% below ATH, 0 = off)',
   min_source_count: 'minimum source count',
   token_age_max_ms: 'maximum token age milliseconds',
@@ -439,6 +442,10 @@ export function strategyKeyboard() {
     [
       { text: `Smart ${strat.min_smart_wallet_holders || 'off'}`, callback_data: 'stratinput:min_smart_wallet_holders' },
       { text: `KOL ${strat.min_kol_holders || 'off'}`, callback_data: 'stratinput:min_kol_holders' },
+    ],
+    [
+      { text: `Dev Hold ${strat.require_dev_holding ? 'on' : 'off'}`, callback_data: 'stratcfg:require_dev_holding' },
+      { text: `Dev Sold Max ${strat.max_dev_sold_pct > 0 ? `${strat.max_dev_sold_pct}%` : 'off'}`, callback_data: 'stratinput:max_dev_sold_pct' },
     ],
     [
       { text: `Age ${strat.token_age_max_ms > 0 ? Math.round(strat.token_age_max_ms / 60000) + 'm' : 'off'}`, callback_data: 'stratinput:token_age_max_ms' },

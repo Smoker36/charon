@@ -231,6 +231,7 @@ const STRAT_PRESETS = {
   min_buy_sell_ratio: [0, 1, 1.2, 1.5, 2, 3],
   min_smart_wallet_holders: [0, 1, 2, 3, 5],
   min_kol_holders: [0, 1, 2, 3, 5],
+  max_dev_sold_pct: [0, 20, 30, 50, 70, 90],
 };
 
 function formatStratValue(key, value) {
@@ -250,7 +251,7 @@ async function handleStratConfig(query, chatId, key) {
   delete newConfig.name;
 
   // Boolean toggles
-  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim', 'profit_lock_enabled']);
+  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim', 'profit_lock_enabled', 'require_dev_holding']);
   if (boolKeys.has(key)) {
     newConfig[key] = !strat[key];
     if (key === 'profit_lock_enabled' && newConfig[key]) {
