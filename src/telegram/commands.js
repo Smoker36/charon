@@ -28,7 +28,7 @@ import { refreshPosition } from '../execution/positions.js';
 import { executeLiveSell } from '../execution/router.js';
 import { handleCallback, editMenuMessage } from './callbacks.js';
 import { consumeNumericFilterInput } from './input.js';
-import { runLearning, sendLessons } from '../learning/commands.js';
+import { runLearning, runSmartDegenLearning, sendLessons } from '../learning/commands.js';
 import { fetchWalletPnl } from '../enrichment/wallets.js';
 import { autoImportWallets, purgeAutoWallets, autoWalletCount } from '../enrichment/smartWalletImport.js';
 import { walletMonitorStats } from '../signals/walletMonitor.js';
@@ -89,6 +89,10 @@ export async function handleMessage(msg) {
     return bot.sendMessage(chatId, `Updated ${id}.${key} = ${value}\n\n${strategyMenuText()}`, { parse_mode: 'HTML' });
   }
   if (text.startsWith('/pnl')) return sendPnl(chatId);
+  if (text.startsWith('/learnsmartdegen')) {
+    const windowArg = text.split(/\s+/)[1] || '7d';
+    return runSmartDegenLearning(chatId, windowArg);
+  }
   if (text.startsWith('/learn')) {
     const windowArg = text.split(/\s+/)[1] || '12h';
     return runLearning(chatId, windowArg);
@@ -328,6 +332,7 @@ export function setupTelegram() {
     { command: 'filters', description: 'Show filters' },
     { command: 'pnl', description: 'Show saved-wallet PnL' },
     { command: 'learn', description: 'Run manual learning report' },
+    { command: 'learnsmartdegen', description: 'Analyze SmartDegen count correlation with PnL' },
     { command: 'lessons', description: 'Show active screening lessons' },
     { command: 'setfilter', description: 'Set a filter value' },
     { command: 'walletadd', description: 'Save wallet for exposure/PnL (label address [smartwallet|kol])' },

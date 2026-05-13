@@ -41,6 +41,7 @@ export function normalizeStrategyConfig(id, name, config = {}) {
     min_kol_holders: Number(config.min_kol_holders ?? 0),
     require_dev_holding: Boolean(config.require_dev_holding ?? false),
     max_dev_sold_pct: Number(config.max_dev_sold_pct ?? 0),
+    min_smart_degen_count: Number(config.min_smart_degen_count ?? 0),
     id,
     name,
   };
@@ -103,7 +104,7 @@ function defaultStrategy() {
     min_fee_claim_sol: 0.5, min_gmgn_total_fee_sol: 10, min_holders: 0,
     max_top20_holder_percent: 100, min_saved_wallet_holders: 0,
     min_smart_wallet_holders: 0, min_kol_holders: 0,
-    require_dev_holding: false, max_dev_sold_pct: 0, max_ath_distance_pct: 0,
+    require_dev_holding: false, max_dev_sold_pct: 0, min_smart_degen_count: 0, max_ath_distance_pct: 0,
     min_graduated_volume_usd: 0, trending_min_volume_usd: 0, trending_min_swaps: 0,
     trending_max_rug_ratio: 0.3, trending_max_bundler_rate: 0.5,
     min_holder_growth_pct: 0, min_buy_sell_ratio: 0,

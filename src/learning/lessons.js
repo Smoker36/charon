@@ -82,6 +82,80 @@ export async function generateLessons(summary) {
   }
 }
 
+export async function generateSmartDegenLessons(summary) {
+  const { bucketStats, correlation, totalClosed } = summary;
+  const fallback = [];
+
+  const best = bucketStats[0];
+  const worst = bucketStats[bucketStats.length - 1];
+
+  if (best && best.count >= 2 && best.avgPnlPercent > 0) {
+    fallback.push({
+      lesson: `Positions with ${best.label} smart degens averaged ${fmtPct(best.avgPnlPercent)} PnL (${best.count} trades, ${fmtPct(best.winRate)} win rate). Consider setting min_smart_degen_count to ${best.min}.`,
+      evidence: best,
+    });
+  }
+  if (worst && worst.count >= 2 && worst.avgPnlPercent < 0 && worst.label !== best?.label) {
+    fallback.push({
+      lesson: `Positions with ${worst.label} smart degens underperformed at ${fmtPct(worst.avgPnlPercent)} avg PnL. Avoid or filter out this degen bucket.`,
+      evidence: worst,
+    });
+  }
+  const hi = correlation.highDegen;
+  const lo = correlation.lowDegen;
+  if (hi.count >= 2 && lo.count >= 2 && hi.avgPnl != null && lo.avgPnl != null) {
+    const diff = hi.avgPnl - lo.avgPnl;
+    if (Math.abs(diff) > 5) {
+      fallback.push({
+        lesson: diff > 0
+          ? `High smart degen (≥3) outperformed low degen by ${fmtPct(diff)} avg PnL. Setting min_smart_degen_count ≥ 3 likely improves results.`
+          : `Low smart degen (<3) outperformed high degen by ${fmtPct(Math.abs(diff))} avg PnL. Smart degen count may not be predictive for this setup.`,
+        evidence: { hi, lo, diff },
+      });
+    }
+  }
+  if (!fallback.length) {
+    fallback.push({
+      lesson: `Not enough data (${totalClosed} closed) to determine optimal min_smart_degen_count. Keep collecting trades.`,
+      evidence: { totalClosed },
+    });
+  }
+
+  if (!ENABLE_LLM || !LLM_API_KEY) return { lessons: fallback };
+
+  try {
+    const res = await axios.post(`${LLM_BASE_URL.replace(/\/$/, '')}/chat/completions`, {
+      model: LLM_MODEL,
+      temperature: 0.1,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are Charon analyzing smart degen correlation data from meme coin dry-run trades. Return strict JSON only. Be specific and actionable.',
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            task: 'Analyze how smart degen count correlates with PnL outcomes. Produce up to 4 concise lessons that help tune min_smart_degen_count filter.',
+            output_schema: { lessons: [{ lesson: 'short actionable rule', evidence: 'supporting data' }] },
+            summary,
+          }),
+        },
+      ],
+    }, {
+      timeout: LLM_TIMEOUT_MS,
+      headers: { authorization: `Bearer ${LLM_API_KEY}`, 'content-type': 'application/json' },
+    });
+    const parsed = strictJsonFromText(res.data?.choices?.[0]?.message?.content || '');
+    const lessons = Array.isArray(parsed.lessons)
+      ? parsed.lessons.map(item => ({ lesson: String(item.lesson || '').slice(0, 500), evidence: item.evidence ?? {} })).filter(item => item.lesson)
+      : [];
+    return { lessons: lessons.length ? lessons.slice(0, 4) : fallback };
+  } catch (err) {
+    console.log(`[learn-smartdegen] LLM failed: ${err.message}`);
+    return { lessons: fallback };
+  }
+}
+
 export function storeLearningRun(windowMs, summary, lessons, raw) {
   const result = db.prepare(`
     INSERT INTO learning_runs (created_at_ms, window_ms, summary_json, lessons_json, raw_json)

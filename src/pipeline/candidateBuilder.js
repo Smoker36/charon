@@ -175,6 +175,12 @@ export function filterCandidate(candidate) {
     failures.push(`KOL holders: ${kolCount} < ${strat.min_kol_holders}`);
   }
 
+  // GMGN/Jupiter smart degen count (organic buyers detected by the trending source)
+  const smartDegenCount = candidate.metrics.trendingSmartDegenCount ?? 0;
+  if (strat.min_smart_degen_count > 0 && smartDegenCount < strat.min_smart_degen_count) {
+    failures.push(`smart degen count: ${smartDegenCount} < ${strat.min_smart_degen_count}`);
+  }
+
   // Dev wallet checks
   const dev = candidate.devWallet;
   if (dev) {
