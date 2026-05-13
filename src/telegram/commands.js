@@ -37,13 +37,18 @@ import { handleChatMessage, clearChatHistory, hasChatHistory } from './chat.js';
 export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
   const chatId = msg.chat.id;
+
+  // Security: only respond to the configured chat
+  if (String(chatId) !== String(TELEGRAM_CHAT_ID)) return;
+
   if (await consumeNumericFilterInput(chatId, text, msg.message_id)) return;
 
   // Free-form chat — route non-command messages to LLM agent
   if (!text.startsWith('/')) {
+    if (!text) return; // ignore empty messages (stickers, photos, etc.)
     await bot.sendChatAction(chatId, 'typing');
     const reply = await handleChatMessage(text, chatId);
-    return bot.sendMessage(chatId, reply, { parse_mode: 'HTML', disable_web_page_preview: true });
+    return sendChatReply(chatId, reply);
   }
   if (text.startsWith('/reset')) {
     clearChatHistory(chatId);
@@ -54,7 +59,7 @@ export async function handleMessage(msg) {
     if (!question) return bot.sendMessage(chatId, 'Usage: /ask &lt;your question&gt;\n\nOr just type freely without any command.', { parse_mode: 'HTML' });
     await bot.sendChatAction(chatId, 'typing');
     const reply = await handleChatMessage(question, chatId);
-    return bot.sendMessage(chatId, reply, { parse_mode: 'HTML', disable_web_page_preview: true });
+    return sendChatReply(chatId, reply);
   }
   if (text.startsWith('/menu')) return sendMenu(chatId);
   if (text.startsWith('/positions')) return sendPositions(chatId);
@@ -443,4 +448,18 @@ function parseSetFilter(text) {
 
 function savedWallets() {
   return db.prepare('SELECT * FROM saved_wallets ORDER BY label').all();
+}
+
+// Send LLM chat reply — try HTML first, fall back to plain text on parse error
+async function sendChatReply(chatId, text) {
+  try {
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true });
+  } catch (err) {
+    if (/can't parse entities|parse_mode/i.test(err.message)) {
+      // LLM returned unescaped HTML characters — send as plain text
+      await bot.sendMessage(chatId, text, { disable_web_page_preview: true });
+    } else {
+      throw err;
+    }
+  }
 }
