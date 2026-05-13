@@ -11,6 +11,10 @@ const GMGN_QUOTATION_ENDPOINTS = [
   'https://gmgn.ai/defi/quotation/v1/rank/sol/swaps/7d',
 ];
 
+// Module-level backoff: back off 10 min when all endpoints return 403/429
+let gmgnQuotationBackoffUntil = 0;
+const GMGN_QUOTATION_BACKOFF_MS = 10 * 60 * 1000;
+
 async function fetchUrl(url, params = {}) {
   const u = new URL(url);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, String(v));
@@ -18,7 +22,7 @@ async function fetchUrl(url, params = {}) {
     headers: JSON_HEADERS,
     signal: AbortSignal.timeout(12_000),
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status });
   return res.json();
 }
 
@@ -46,6 +50,13 @@ function resolveKindFromRow(row, defaultKind) {
 }
 
 async function fetchGmgnTopTraders({ limit = 50, period = '7d' } = {}) {
+  if (now() < gmgnQuotationBackoffUntil) {
+    const remaining = Math.ceil((gmgnQuotationBackoffUntil - now()) / 1000);
+    log('smartwallet', `GMGN quotation backed off — skipping (${remaining}s remaining)`);
+    return [];
+  }
+
+  let allBlocked = true;
   for (const endpoint of GMGN_QUOTATION_ENDPOINTS) {
     try {
       const payload = await fetchUrl(endpoint, {
@@ -59,10 +70,17 @@ async function fetchGmgnTopTraders({ limit = 50, period = '7d' } = {}) {
         log('smartwallet', `GMGN ${new URL(endpoint).pathname} returned ${rows.length} wallets`);
         return rows;
       }
+      allBlocked = false;
     } catch (err) {
       log('smartwallet', `GMGN ${new URL(endpoint).pathname} failed: ${err.message}`);
+      if (err.status !== 403 && err.status !== 429) allBlocked = false;
       await sleep(500);
     }
+  }
+
+  if (allBlocked) {
+    gmgnQuotationBackoffUntil = now() + GMGN_QUOTATION_BACKOFF_MS;
+    log('smartwallet', `All GMGN quotation endpoints blocked — backing off ${GMGN_QUOTATION_BACKOFF_MS / 60000}m`);
   }
   return [];
 }
