@@ -47,27 +47,6 @@ export function menuKeyboard() {
           { text: 'PnL', callback_data: 'menu:pnl' },
           { text: 'Learning', callback_data: 'menu:learn' },
         ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
       ],
     },
   };

@@ -1,4 +1,4 @@
-import { now, pruneSeen } from '../utils.js';
+import { now, pruneSeen, log, logError } from '../utils.js';
 import { numSetting, boolSetting } from '../db/settings.js';
 import { upsertCandidate, updateCandidateStatus, recentEligibleCandidates, candidateById } from '../db/candidates.js';
 import { storeDecision, storeBatchDecision, logDecisionEvent } from '../db/decisions.js';
@@ -23,11 +23,19 @@ setDegenHandler(maybeProcessDegenCandidate);
 setCandidateHandler(processCandidateFromSignals);
 
 export async function processCandidateFromSignals(signals) {
+  try {
+    return await _processCandidateFromSignals(signals);
+  } catch (err) {
+    logError('agent', `processCandidateFromSignals unhandled error for ${signals?.mint?.slice(0, 8) ?? '?'}: ${err.message}`);
+  }
+}
+
+async function _processCandidateFromSignals(signals) {
   // Skip if max positions reached — don't waste enrichment/LLM calls
   if (!canOpenMorePositions()) {
     const strat = activeStrategy();
     const max = strat.max_open_positions ?? numSetting('max_open_positions', 3);
-    console.log(`[agent] max positions reached (${openPositionCount()}/${max}), skipping ${signals.mint.slice(0, 8)}...`);
+    log('agent', `max positions reached (${openPositionCount()}/${max}), skipping ${signals.mint.slice(0, 8)}...`);
     return;
   }
 
@@ -35,7 +43,7 @@ export async function processCandidateFromSignals(signals) {
   const signature = signals.signature || null;
   const candidateId = upsertCandidate(candidate, signature);
   if (!candidate.filters.passed) {
-    console.log(`[candidate] filtered ${candidate.token.mint.slice(0, 8)}... ${candidate.filters.failures.join('; ')}`);
+    log('candidate', `filtered ${candidate.token.mint.slice(0, 8)}... ${candidate.filters.failures.join('; ')}`);
     return;
   }
 
@@ -95,7 +103,7 @@ export async function processCandidateFromSignals(signals) {
 
   if (selectedRow && agentEnabled && batchDecision.verdict === 'BUY' && batchDecision.confidence >= confidenceThreshold) {
     if (!canOpenMorePositions()) {
-      console.log(`[agent] max open positions reached (${openPositionCount()}/${maxOpenPositions}), skipping buy ${selectedRow.candidate.token.mint}`);
+      log('agent', `max open positions reached (${openPositionCount()}/${maxOpenPositions}), skipping buy ${selectedRow.candidate.token.mint}`);
       logDecisionEvent({
         batchId,
         triggerCandidateId: candidateId,
@@ -160,36 +168,44 @@ export async function handleApprovedBuy(selectedRow, decision, batchId, rows = [
   }
 
   if (mode === 'dry_run') {
-    const positionId = await createDryRunPosition(freshSelectedRow.id, freshSelectedRow.candidate, decision, `llm_batch_${batchId}`);
-    logDecisionEvent({
-      batchId,
-      triggerCandidateId,
-      selectedRow: freshSelectedRow,
-      rows: executionRows,
-      decision,
-      mode,
-      action: 'dry_run_entry',
-      guardrails: { maxOpenPositions, openPositions: openPositionCount() },
-      execution: { positionId },
-    });
-    await sendPositionOpen(positionId);
+    try {
+      const positionId = await createDryRunPosition(freshSelectedRow.id, freshSelectedRow.candidate, decision, `llm_batch_${batchId}`);
+      logDecisionEvent({
+        batchId,
+        triggerCandidateId,
+        selectedRow: freshSelectedRow,
+        rows: executionRows,
+        decision,
+        mode,
+        action: 'dry_run_entry',
+        guardrails: { maxOpenPositions, openPositions: openPositionCount() },
+        execution: { positionId },
+      });
+      await sendPositionOpen(positionId);
+    } catch (err) {
+      logError('agent', `dry_run entry failed for ${freshSelectedRow.candidate.token.mint.slice(0, 8)}: ${err.message}`);
+    }
     return;
   }
 
   if (mode === 'confirm') {
-    const intentId = createTradeIntent(freshSelectedRow.id, freshSelectedRow.candidate, decision, mode, 'pending_confirmation');
-    logDecisionEvent({
-      batchId,
-      triggerCandidateId,
-      selectedRow: freshSelectedRow,
-      rows: executionRows,
-      decision,
-      mode,
-      action: 'confirm_intent_created',
-      guardrails: { maxOpenPositions, openPositions: openPositionCount() },
-      execution: { intentId },
-    });
-    await sendTradeIntent(intentId, freshSelectedRow.candidate, decision);
+    try {
+      const intentId = createTradeIntent(freshSelectedRow.id, freshSelectedRow.candidate, decision, mode, 'pending_confirmation');
+      logDecisionEvent({
+        batchId,
+        triggerCandidateId,
+        selectedRow: freshSelectedRow,
+        rows: executionRows,
+        decision,
+        mode,
+        action: 'confirm_intent_created',
+        guardrails: { maxOpenPositions, openPositions: openPositionCount() },
+        execution: { intentId },
+      });
+      await sendTradeIntent(intentId, freshSelectedRow.candidate, decision);
+    } catch (err) {
+      logError('agent', `confirm intent failed for ${freshSelectedRow.candidate.token.mint.slice(0, 8)}: ${err.message}`);
+    }
     return;
   }
 

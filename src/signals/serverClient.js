@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { SIGNAL_SERVER_URL, SIGNAL_SERVER_KEY, SIGNAL_POLL_MS } from '../config.js';
-import { now } from '../utils.js';
+import { now, log, logError } from '../utils.js';
 import { activeStrategy } from '../db/settings.js';
 import { storeSignalEvent, trendingSignalPass, trending } from './trending.js';
 import { graduated } from './graduated.js';
@@ -53,127 +53,132 @@ export async function fetchServerSignals() {
       const mint = signal.mint;
       if (!mint) continue;
 
-      // Update graduated map
-      if (signal.graduated) {
-        graduated.set(mint, {
-          ...signal.graduated,
-          coinMint: mint,
-          seenAt: now(),
-          // Server doesn't nest these on the graduated object — pull from top-level
-          name: signal.name,
-          ticker: signal.symbol,
-          volume: signal.volume24h ?? 0,
-          marketCap: signal.marketCapUsd ?? 0,
-        });
-      }
+      try {
+        // Update graduated map
+        if (signal.graduated) {
+          graduated.set(mint, {
+            ...signal.graduated,
+            coinMint: mint,
+            seenAt: now(),
+            // Server doesn't nest these on the graduated object — pull from top-level
+            name: signal.name,
+            ticker: signal.symbol,
+            volume: signal.volume24h ?? 0,
+            marketCap: signal.marketCapUsd ?? 0,
+          });
+        }
 
-      // Update trending map
-      if (signal.trending) {
-        const trendingToken = {
-          address: mint,
-          name: signal.name,
-          symbol: signal.symbol,
-          price: signal.priceUsd,
-          market_cap: signal.marketCapUsd,
-          liquidity: signal.liquidityUsd,
-          holder_count: signal.holders,
-          volume: signal.volume5m ?? signal.volume24h ?? 0,
-          // Server sends buys/sells separately; compute swaps so trending_min_swaps works
-          swaps: (signal.trending.buys ?? 0) + (signal.trending.sells ?? 0),
-          source: signal.sources?.find(s => s.includes('trending')) || 'server',
-          seenAt: now(),
-          ...signal.trending,
-        };
-        trending.set(mint, trendingToken);
-      }
+        // Update trending map
+        if (signal.trending) {
+          const trendingToken = {
+            address: mint,
+            name: signal.name,
+            symbol: signal.symbol,
+            price: signal.priceUsd,
+            market_cap: signal.marketCapUsd,
+            liquidity: signal.liquidityUsd,
+            holder_count: signal.holders,
+            volume: signal.volume5m ?? signal.volume24h ?? 0,
+            // Server sends buys/sells separately; compute swaps so trending_min_swaps works
+            swaps: (signal.trending.buys ?? 0) + (signal.trending.sells ?? 0),
+            source: signal.sources?.find(s => s.includes('trending')) || 'server',
+            seenAt: now(),
+            ...signal.trending,
+          };
+          trending.set(mint, trendingToken);
+        }
 
-      const key = `signal:${mint}`;
-      if (seenSignals.has(key)) { processed++; continue; }
-      seenSignals.set(key, now());
+        const key = `signal:${mint}`;
+        if (seenSignals.has(key)) { processed++; continue; }
+        seenSignals.set(key, now());
 
-      // Store signal events
-      for (const source of signal.sources) {
-        const kind = source.includes('trending') ? 'trending' : source.includes('fee') ? 'fee_claim' : 'graduated';
-        storeSignalEvent(mint, kind, source, signal);
-      }
+        // Store signal events
+        for (const source of signal.sources) {
+          const kind = source.includes('trending') ? 'trending' : source.includes('fee') ? 'fee_claim' : 'graduated';
+          storeSignalEvent(mint, kind, source, signal);
+        }
 
-      const graduatedCoin = graduated.get(mint) || signal.graduated || null;
-      const trendingToken = trending.get(mint) || null;
-      const hasFee = Boolean(signal.feeClaim);
-      const sourceCount = signal.sourceCount || 1;
+        const graduatedCoin = graduated.get(mint) || signal.graduated || null;
+        const trendingToken = trending.get(mint) || null;
+        const hasFee = Boolean(signal.feeClaim);
+        const sourceCount = signal.sourceCount || 1;
 
-      // Strategy gate: check source count
-      if (sourceCount < strat.min_source_count) { processed++; continue; }
+        // Strategy gate: check source count
+        if (sourceCount < strat.min_source_count) { processed++; continue; }
 
-      // Strategy gate: fee claim requirement
-      if (strat.require_fee_claim && !hasFee) { processed++; continue; }
+        // Strategy gate: fee claim requirement
+        if (strat.require_fee_claim && !hasFee) { processed++; continue; }
 
-      // Strategy gate: token age
-      if (strat.token_age_max_ms > 0) {
-        const tokenAge = signal.ageMs || 0;
-        if (tokenAge > strat.token_age_max_ms) { processed++; continue; }
-      }
+        // Strategy gate: token age
+        if (strat.token_age_max_ms > 0) {
+          const tokenAge = signal.ageMs || 0;
+          if (tokenAge > strat.token_age_max_ms) { processed++; continue; }
+        }
 
-      // Determine route
-      let route = null;
-      if (hasFee && graduatedCoin && trendingToken) route = 'fee_graduated_trending';
-      else if (hasFee && graduatedCoin) route = 'fee_graduated';
-      else if (hasFee && trendingToken) route = 'fee_trending';
-      else if (graduatedCoin && trendingToken) route = 'graduated_trending';
-      else if (sourceCount >= 3) route = 'multi_source';
-      else if (sourceCount >= 2) route = 'dual_source';
-      else route = 'single_source';
+        // Determine route
+        let route = null;
+        if (hasFee && graduatedCoin && trendingToken) route = 'fee_graduated_trending';
+        else if (hasFee && graduatedCoin) route = 'fee_graduated';
+        else if (hasFee && trendingToken) route = 'fee_trending';
+        else if (graduatedCoin && trendingToken) route = 'graduated_trending';
+        else if (sourceCount >= 3) route = 'multi_source';
+        else if (sourceCount >= 2) route = 'dual_source';
+        else route = 'single_source';
 
-      // Build fee object if present
-      let fee = null;
-      let signature = null;
-      if (signal.feeClaim) {
-        fee = {
-          mint,
-          distributed: BigInt(Math.floor(signal.feeClaim.distributedSol * 1e9)),
-          shareholders: (signal.feeClaim.shareholders || []).map(h => ({
-            pubkey: h.address,
-            bps: h.bps,
-          })),
-        };
-        signature = signal.feeClaim.signature;
-      }
+        // Build fee object if present
+        let fee = null;
+        let signature = null;
+        if (signal.feeClaim) {
+          fee = {
+            mint,
+            distributed: BigInt(Math.floor(signal.feeClaim.distributedSol * 1e9)),
+            shareholders: (signal.feeClaim.shareholders || []).map(h => ({
+              pubkey: h.address,
+              bps: h.bps,
+            })),
+          };
+          signature = signal.feeClaim.signature;
+        }
 
-      // Entry mode logic
-      if (strat.entry_mode === 'wait_for_dip' && strat.max_ath_distance_pct < 0) {
-        // Dip buy strategy: check if already at target
-        const athDist = signal.graduated?.distanceFromAthPercent;
-        if (athDist != null && athDist <= strat.max_ath_distance_pct) {
-          // Already at dip target, trigger immediately
+        // Entry mode logic
+        if (strat.entry_mode === 'wait_for_dip' && strat.max_ath_distance_pct < 0) {
+          // Dip buy strategy: check if already at target
+          const athDist = signal.graduated?.distanceFromAthPercent;
+          if (athDist != null && athDist <= strat.max_ath_distance_pct) {
+            // Already at dip target, trigger immediately
+            await triggerCandidate({ mint, fee, signature, graduatedCoin, trendingToken, route });
+            triggered++;
+          } else {
+            // Store price alert for later
+            const { storePriceAlert } = await import('./priceMonitor.js');
+            const targetPrice = signal.priceUsd ? signal.priceUsd * (1 + strat.max_ath_distance_pct / 100) : null;
+            storePriceAlert({
+              mint,
+              strategyId: strat.id,
+              alertType: 'dip_target',
+              targetPriceUsd: targetPrice,
+              targetAthDistancePercent: strat.max_ath_distance_pct,
+              signal,
+              expiresMs: 24 * 60 * 60 * 1000,
+            });
+            dipAlerts++;
+          }
+        } else {
+          // Immediate entry mode (sniper, smart_money, degen)
           await triggerCandidate({ mint, fee, signature, graduatedCoin, trendingToken, route });
           triggered++;
-        } else {
-          // Store price alert for later
-          const { storePriceAlert } = await import('./priceMonitor.js');
-          const targetPrice = signal.priceUsd ? signal.priceUsd * (1 + strat.max_ath_distance_pct / 100) : null;
-          storePriceAlert({
-            mint,
-            strategyId: strat.id,
-            alertType: 'dip_target',
-            targetPriceUsd: targetPrice,
-            targetAthDistancePercent: strat.max_ath_distance_pct,
-            signal,
-            expiresMs: 24 * 60 * 60 * 1000,
-          });
-          dipAlerts++;
         }
-      } else {
-        // Immediate entry mode (sniper, smart_money, degen)
-        await triggerCandidate({ mint, fee, signature, graduatedCoin, trendingToken, route });
-        triggered++;
-      }
 
-      processed++;
+        processed++;
+      } catch (err) {
+        logError('server', `signal processing error for ${mint.slice(0, 8)}: ${err.message}`);
+        processed++;
+      }
     }
 
     const dipPart = dipAlerts > 0 ? `, ${dipAlerts} dip alerts` : '';
-    console.log(`[server] ${processed} signals, ${triggered} triggered${dipPart}, tracking ${trending.size}`);
+    log('server', `${processed} signals, ${triggered} triggered${dipPart}, tracking ${trending.size}`);
   } catch (err) {
-    console.log(`[server] ${err.message}`);
+    log('server', err.message);
   }
 }

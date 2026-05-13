@@ -6,7 +6,7 @@ import { setupTelegram } from './telegram/commands.js';
 import { monitorPositions } from './execution/positions.js';
 import { processCandidateFromSignals, maybeProcessDegenCandidate } from './pipeline/orchestrator.js';
 import { sendTelegram } from './telegram/send.js';
-import { makeFailureTracker } from './utils.js';
+import { makeFailureTracker, log } from './utils.js';
 
 setDefaultResultOrder('ipv4first');
 validateConfig();
@@ -27,7 +27,7 @@ export async function startCharon() {
     const trackServer = makeFailureTracker('server signals', alert);
     const trackDip = makeFailureTracker('dip monitor', alert);
 
-    await fetchServerSignals().catch(error => console.log(`[server] initial fetch failed: ${error.message}`));
+    await fetchServerSignals().catch(error => log('server', `initial fetch failed: ${error.message}`));
     setInterval(() => trackServer(() => fetchServerSignals()), SIGNAL_POLL_MS);
 
     // Price monitor for dip buy strategy
@@ -37,7 +37,7 @@ export async function startCharon() {
     setInterval(() => trackDip(() => monitorPriceAlerts()), 10_000);
     setInterval(() => cleanupAlerts(), 60 * 60 * 1000);
 
-    console.log(`[bot] ${APP_NAME} started (server mode: ${SIGNAL_SERVER_URL})`);
+    log('bot', `${APP_NAME} started (server mode: ${SIGNAL_SERVER_URL})`);
   } else {
     // ── Standalone mode: direct polling (legacy) ───────────────────────────
     const { fetchGraduatedCoins } = await import('./signals/graduated.js');
@@ -47,14 +47,14 @@ export async function startCharon() {
     setDegenHandler(maybeProcessDegenCandidate);
     setCandidateHandler(processCandidateFromSignals);
 
-    await fetchGraduatedCoins().catch(error => console.log(`[graduated] initial fetch failed: ${error.message}`));
-    await fetchGmgnTrending().catch(error => console.log(`[trending] initial fetch failed: ${error.message}`));
+    await fetchGraduatedCoins().catch(error => log('graduated', `initial fetch failed: ${error.message}`));
+    await fetchGmgnTrending().catch(error => log('trending', `initial fetch failed: ${error.message}`));
 
-    setInterval(() => fetchGraduatedCoins().catch(error => console.log(`[graduated] ${error.message}`)), GRADUATED_POLL_MS);
-    setInterval(() => fetchGmgnTrending().catch(error => console.log(`[trending] ${error.message}`)), TRENDING_POLL_MS);
+    setInterval(() => fetchGraduatedCoins().catch(error => log('graduated', error.message)), GRADUATED_POLL_MS);
+    setInterval(() => fetchGmgnTrending().catch(error => log('trending', error.message)), TRENDING_POLL_MS);
     startWebsocket();
 
-    console.log(`[bot] ${APP_NAME} started (standalone mode)`);
+    log('bot', `${APP_NAME} started (standalone mode)`);
   }
 
   // Position monitoring runs in both modes
