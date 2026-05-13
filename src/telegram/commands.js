@@ -100,13 +100,15 @@ export async function handleMessage(msg) {
     return sendCandidate(chatId, row.id);
   }
   if (text.startsWith('/walletadd')) {
-    const [, label, address] = text.split(/\s+/);
-    if (!label || !address) return bot.sendMessage(chatId, 'Usage: /walletadd <label> <address>');
+    const [, label, address, kindArg] = text.split(/\s+/);
+    if (!label || !address) return bot.sendMessage(chatId, 'Usage: /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol]', { parse_mode: 'HTML' });
+    const validKinds = new Set(['wallet', 'smartwallet', 'kol']);
+    const kind = validKinds.has(kindArg) ? kindArg : 'wallet';
     db.prepare(`
-      INSERT INTO saved_wallets (label, address, created_at_ms) VALUES (?, ?, ?)
-      ON CONFLICT(label) DO UPDATE SET address = excluded.address
-    `).run(label, address, now());
-    return bot.sendMessage(chatId, `Saved wallet ${label}.`);
+      INSERT INTO saved_wallets (label, address, created_at_ms, kind) VALUES (?, ?, ?, ?)
+      ON CONFLICT(label) DO UPDATE SET address = excluded.address, kind = excluded.kind
+    `).run(label, address, now(), kind);
+    return bot.sendMessage(chatId, `Saved wallet <b>${escapeHtml(label)}</b> (${kind}).`, { parse_mode: 'HTML' });
   }
   if (text.startsWith('/walletremove')) {
     const label = text.split(/\s+/)[1];
@@ -265,7 +267,7 @@ export function setupTelegram() {
     { command: 'learn', description: 'Run manual learning report' },
     { command: 'lessons', description: 'Show active screening lessons' },
     { command: 'setfilter', description: 'Set a filter value' },
-    { command: 'walletadd', description: 'Save wallet for exposure/PnL' },
+    { command: 'walletadd', description: 'Save wallet for exposure/PnL (label address [smartwallet|kol])' },
     { command: 'walletremove', description: 'Remove saved wallet' },
     { command: 'wallets', description: 'List saved wallets' },
   ]).catch(err => console.log(`[telegram] commands ${err.message}`));
@@ -310,7 +312,8 @@ export async function sendPnl(chatId, query = null) {
     walletLines.push(`<b>Wallet PnL</b>\n${chunks.join('\n\n')}`);
   }
   const text = `📊 <b>PnL</b>\n\n${modeLines.join('\n\n')}${walletLines.length ? `\n\n${walletLines.join('\n\n')}` : ''}`;
-  return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+  const pnlKeyboard = navKeyboard([[{ text: '🏆 Top Performance', callback_data: 'menu:toppnl' }]]);
+  return query ? editMenuMessage(query, text, pnlKeyboard) : bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...pnlKeyboard });
 }
 
 function summarizeModePnl(mode, title) {

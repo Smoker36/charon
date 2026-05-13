@@ -40,6 +40,49 @@ export function allPositions(limit = 10) {
   return db.prepare('SELECT * FROM dry_run_positions ORDER BY id DESC LIMIT ?').all(limit);
 }
 
+export function topPerformingPositions({ limit = 10, mode = 'all', orderBy = 'pnl_percent', windowMs = 0 } = {}) {
+  const conditions = ["status = 'closed'"];
+  const params = [];
+  if (mode !== 'all') {
+    conditions.push("COALESCE(execution_mode, 'dry_run') = ?");
+    params.push(mode);
+  }
+  if (windowMs > 0) {
+    conditions.push('closed_at_ms >= ?');
+    params.push(Date.now() - windowMs);
+  }
+  const validOrder = new Set(['pnl_percent', 'pnl_sol', 'closed_at_ms']);
+  const col = validOrder.has(orderBy) ? orderBy : 'pnl_percent';
+  return db.prepare(
+    `SELECT * FROM dry_run_positions WHERE ${conditions.join(' AND ')} ORDER BY ${col} DESC LIMIT ?`
+  ).all(...params, limit);
+}
+
+export function pnlByStrategy({ mode = 'all', windowMs = 0 } = {}) {
+  const conditions = ["status = 'closed'"];
+  const params = [];
+  if (mode !== 'all') {
+    conditions.push("COALESCE(execution_mode, 'dry_run') = ?");
+    params.push(mode);
+  }
+  if (windowMs > 0) {
+    conditions.push('closed_at_ms >= ?');
+    params.push(Date.now() - windowMs);
+  }
+  return db.prepare(`
+    SELECT
+      COALESCE(strategy_id, 'unknown') AS strategy,
+      COUNT(*) AS total,
+      SUM(CASE WHEN COALESCE(pnl_percent, 0) > 0 THEN 1 ELSE 0 END) AS wins,
+      AVG(COALESCE(pnl_percent, 0)) AS avg_pnl_percent,
+      SUM(COALESCE(pnl_sol, 0)) AS total_pnl_sol
+    FROM dry_run_positions
+    WHERE ${conditions.join(' AND ')}
+    GROUP BY strategy_id
+    ORDER BY total_pnl_sol DESC
+  `).all(...params);
+}
+
 export function createDryRunPosition(candidateId, candidate, decision, reason = 'llm_buy') {
   const strat = activeStrategy();
   const sizeSol = strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1);

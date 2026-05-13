@@ -1,6 +1,6 @@
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short } from '../format.js';
 import { numSetting, boolSetting, setting, activeStrategy, allStrategies } from '../db/settings.js';
-import { openPositionCount, tradingMode, openPositions, inactivePositions, inactivePositionCount } from '../db/positions.js';
+import { openPositionCount, tradingMode, openPositions, inactivePositions, inactivePositionCount, topPerformingPositions, pnlByStrategy } from '../db/positions.js';
 import { savedWallets } from '../enrichment/wallets.js';
 import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
@@ -64,6 +64,8 @@ export function filtersText() {
     `Min holders: ${strat.min_holders || 'off'}`,
     `Max holder: ${strat.max_top20_holder_percent < 100 ? fmtPct(strat.max_top20_holder_percent) : 'off'}`,
     `Min saved holders: ${strat.min_saved_wallet_holders || 'off'}`,
+    `Min smart wallet holders: ${strat.min_smart_wallet_holders || 'off'}`,
+    `Min KOL holders: ${strat.min_kol_holders || 'off'}`,
     strat.max_ath_distance_pct < 0 ? `Max ATH distance: ${strat.max_ath_distance_pct}%` : null,
     '',
     `Min sources: ${strat.min_source_count}`,
@@ -102,6 +104,8 @@ export const strategyNumericLabels = {
   min_holders: 'minimum holders',
   max_top20_holder_percent: 'maximum top holder percent',
   min_saved_wallet_holders: 'minimum saved-wallet holders',
+  min_smart_wallet_holders: 'minimum smart-wallet holders',
+  min_kol_holders: 'minimum KOL holders',
   max_ath_distance_pct: 'maximum ATH distance percent (-40 = 40% below ATH, 0 = off)',
   min_source_count: 'minimum source count',
   token_age_max_ms: 'maximum token age milliseconds',
@@ -218,10 +222,14 @@ export function mainMenuText() {
 
 export function walletsText() {
   const rows = savedWallets();
-  const body = rows.length
-    ? rows.map(row => `• <b>${escapeHtml(row.label)}</b>: <code>${escapeHtml(row.address)}</code>`).join('\n')
-    : 'No saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt;';
-  return `👛 <b>Saved Wallets</b>\n\n${body}`;
+  if (!rows.length) return `👛 <b>Saved Wallets</b>\n\nNo saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol]`;
+  const groups = { wallet: [], smartwallet: [], kol: [] };
+  for (const row of rows) (groups[row.kind || 'wallet'] || groups.wallet).push(row);
+  const sections = [];
+  if (groups.wallet.length) sections.push(`<b>Wallets</b>\n${groups.wallet.map(r => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`).join('\n')}`);
+  if (groups.smartwallet.length) sections.push(`<b>Smart Wallets</b>\n${groups.smartwallet.map(r => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`).join('\n')}`);
+  if (groups.kol.length) sections.push(`<b>KOL Wallets</b>\n${groups.kol.map(r => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`).join('\n')}`);
+  return `👛 <b>Saved Wallets</b>\n\n${sections.join('\n\n')}`;
 }
 
 export function positionsText() {
@@ -384,6 +392,10 @@ export function strategyKeyboard() {
     [
       { text: `Saved ${strat.min_saved_wallet_holders || 'off'}`, callback_data: 'stratinput:min_saved_wallet_holders' },
       { text: `ATH ${strat.max_ath_distance_pct < 0 ? `${strat.max_ath_distance_pct}%` : 'off'}`, callback_data: 'stratinput:max_ath_distance_pct' },
+    ],
+    [
+      { text: `Smart ${strat.min_smart_wallet_holders || 'off'}`, callback_data: 'stratinput:min_smart_wallet_holders' },
+      { text: `KOL ${strat.min_kol_holders || 'off'}`, callback_data: 'stratinput:min_kol_holders' },
     ],
     [
       { text: `Age ${strat.token_age_max_ms > 0 ? Math.round(strat.token_age_max_ms / 60000) + 'm' : 'off'}`, callback_data: 'stratinput:token_age_max_ms' },
@@ -550,6 +562,56 @@ export async function sendTpSlDefaults(chatId, query = null) {
   if (query) return editMenuMessage(query, agentText(), keyboard);
   const { bot } = await import('./bot.js');
   await bot.sendMessage(chatId, agentText(), { parse_mode: 'HTML', ...keyboard });
+}
+
+export function topPnlText(orderBy = 'pnl_percent', mode = 'all', window = '30d') {
+  const windowMap = { '7d': 7 * 24 * 3600000, '30d': 30 * 24 * 3600000, 'all': 0 };
+  const windowMs = windowMap[window] ?? 30 * 24 * 3600000;
+  const positions = topPerformingPositions({ limit: 10, mode, orderBy, windowMs });
+  const stratRows = pnlByStrategy({ mode, windowMs });
+  const orderLabels = { pnl_percent: 'PnL %', pnl_sol: 'PnL SOL', closed_at_ms: 'Recent' };
+  const modeLabel = mode === 'all' ? 'All Modes' : mode === 'dry_run' ? 'Dry-run' : 'Live';
+
+  const lines = [`🏆 <b>Top Performance PnL</b>`, `${modeLabel} · Sort: ${orderLabels[orderBy] || orderBy} · Window: ${window}`, ''];
+
+  if (positions.length) {
+    lines.push('<b>Top Positions</b>');
+    for (const p of positions) {
+      const sym = escapeHtml(p.symbol || short(p.mint));
+      const pnlPct = fmtPct(p.pnl_percent ?? 0);
+      const pnlSol = p.pnl_sol != null ? ` (${p.pnl_sol >= 0 ? '+' : ''}${Number(p.pnl_sol).toFixed(4)} SOL)` : '';
+      lines.push(`• <b>${sym}</b> ${pnlPct}${pnlSol}`);
+    }
+  } else {
+    lines.push('No closed positions yet.');
+  }
+
+  if (stratRows.length) {
+    lines.push('', '<b>By Strategy</b>');
+    for (const s of stratRows) {
+      const wr = s.total > 0 ? Math.round((s.wins / s.total) * 100) : 0;
+      const sign = s.total_pnl_sol >= 0 ? '+' : '';
+      lines.push(`• <b>${escapeHtml(s.strategy)}</b>: ${s.total} trades · WR ${wr}% · ${sign}${Number(s.total_pnl_sol).toFixed(4)} SOL`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export function topPnlKeyboard(orderBy = 'pnl_percent', mode = 'all', window = '30d') {
+  const modes = ['all', 'dry_run', 'live'];
+  const orders = ['pnl_percent', 'pnl_sol', 'closed_at_ms'];
+  const windows = ['7d', '30d', 'all'];
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        modes.map(m => ({ text: `${m === mode ? '▶ ' : ''}${m === 'dry_run' ? 'Dry' : m === 'live' ? 'Live' : 'All'}`, callback_data: `toppnl:${orderBy}:${m}:${window}` })),
+        orders.map(o => ({ text: `${o === orderBy ? '▶ ' : ''}${o === 'pnl_percent' ? 'PnL%' : o === 'pnl_sol' ? 'SOL' : 'Recent'}`, callback_data: `toppnl:${o}:${mode}:${window}` })),
+        windows.map(w => ({ text: `${w === window ? '▶ ' : ''}${w}`, callback_data: `toppnl:${orderBy}:${mode}:${w}` })),
+        [{ text: 'Back to PnL', callback_data: 'menu:pnl' }, { text: 'Back', callback_data: 'menu:main' }],
+      ],
+    },
+  };
 }
 
 async function editMenuMessage(query, text, extra = {}) {

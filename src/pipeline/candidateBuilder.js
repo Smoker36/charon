@@ -154,6 +154,18 @@ export function filterCandidate(candidate) {
     failures.push(`saved wallet holders: ${savedCount} < ${strat.min_saved_wallet_holders}`);
   }
 
+  // Smart wallet holders
+  const smartWalletCount = candidate.savedWalletExposure.smartWalletCount ?? 0;
+  if (strat.min_smart_wallet_holders > 0 && smartWalletCount < strat.min_smart_wallet_holders) {
+    failures.push(`smart wallet holders: ${smartWalletCount} < ${strat.min_smart_wallet_holders}`);
+  }
+
+  // KOL holders
+  const kolCount = candidate.savedWalletExposure.kolCount ?? 0;
+  if (strat.min_kol_holders > 0 && kolCount < strat.min_kol_holders) {
+    failures.push(`KOL holders: ${kolCount} < ${strat.min_kol_holders}`);
+  }
+
   // ATH distance (dip buy strategy)
   if (strat.token_age_max_ms > 0) {
     if (tokenAgeMs <= 0) {
@@ -211,10 +223,6 @@ export function filterCandidate(candidate) {
     if (strat.min_buy_sell_ratio > 0 && buySellRatio < strat.min_buy_sell_ratio) {
       failures.push(`buy/sell ratio: ${buySellRatio.toFixed(2)} < ${strat.min_buy_sell_ratio}`);
     }
-  }
-
-  if (dexPaidEnabled && !candidate.metrics.dexPaid) {
-    failures.push('dex paid: required but token is not flagged as paid');
   }
 
   if (dexPaidEnabled && !candidate.metrics.dexPaid) {

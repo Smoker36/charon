@@ -19,6 +19,8 @@ import {
   sendTpSlDefaults,
   strategyMenuText,
   strategyKeyboard,
+  topPnlText,
+  topPnlKeyboard,
 } from './menus.js';
 import { sendTelegram, sendBatch, sendPositionOpen, sendTradeIntent } from './send.js';
 import { candidateSummary } from './format.js';
@@ -62,6 +64,12 @@ export async function handleCallback(query) {
     return editMenuMessage(query, historyTradeText(), historyTradeKeyboard());
   }
   if (data === 'menu:pnl') return sendPnl(chatId, query);
+  if (data === 'menu:toppnl') return editMenuMessage(query, topPnlText('pnl_percent', 'all', '30d'), topPnlKeyboard('pnl_percent', 'all', '30d'));
+  if (data.startsWith('toppnl:')) {
+    const parts = data.split(':');
+    const [, orderBy, mode, window] = parts;
+    return editMenuMessage(query, topPnlText(orderBy, mode, window), topPnlKeyboard(orderBy, mode, window));
+  }
   if (data === 'menu:learn') return editMenuMessage(query, '🧠 <b>Learning</b>\nUse <code>/learn 7d</code> to generate lessons and <code>/lessons</code> to view saved lessons.', navKeyboard());
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
@@ -185,6 +193,8 @@ const STRAT_PRESETS = {
   token_age_max_ms: [0, 1800000, 3600000],
   min_holder_growth_pct: [0, 10, 25, 50, 100, 200],
   min_buy_sell_ratio: [0, 1, 1.2, 1.5, 2, 3],
+  min_smart_wallet_holders: [0, 1, 2, 3, 5],
+  min_kol_holders: [0, 1, 2, 3, 5],
 };
 
 function formatStratValue(key, value) {
