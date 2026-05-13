@@ -51,6 +51,11 @@ export async function requestStrategyNumericInput(query, key) {
 export async function consumeNumericFilterInput(chatId, text, userMessageId = null) {
   const pending = pendingNumericInputs.get(String(chatId));
   if (!pending) return false;
+  // Let commands pass through — cancel the pending input so the command works normally
+  if (text.startsWith('/')) {
+    pendingNumericInputs.delete(String(chatId));
+    return false;
+  }
   if (now() - pending.at > 5 * 60 * 1000) {
     pendingNumericInputs.delete(String(chatId));
     await bot.sendMessage(chatId, 'That input expired. Tap the filter input button again.');
