@@ -54,6 +54,36 @@ function deriveTokenAgeMs({ gmgn, graduatedCoin, trendingToken, jupiterAsset }) 
   return age > 0 ? age : 0;
 }
 
+function computeTrenchScore(candidate) {
+  let score = 0;
+
+  // Fee claim / total fees (0-25 pts): 1 SOL = ~8, 10 SOL = ~20, 50+ SOL = 25
+  const feeSol = candidate.feeClaim?.distributedSol ?? candidate.metrics?.gmgnTotalFeesSol ?? 0;
+  if (feeSol > 0) score += Math.min(25, Math.log10(feeSol + 1) / Math.log10(51) * 25);
+
+  // Smart wallet exposure (0-25 pts): each smart wallet = 6 pts, each KOL = 4 pts, cap 25
+  const smartCount = candidate.savedWalletExposure?.smartWalletCount ?? 0;
+  const kolCount = candidate.savedWalletExposure?.kolCount ?? 0;
+  score += Math.min(25, smartCount * 6 + kolCount * 4);
+
+  // Buy pressure (0-20 pts): ratio 1.5 = 10 pts, ratio 3+ = 20 pts
+  const bsr = candidate.metrics?.buySellRatio ?? 0;
+  if (bsr > 0) score += Math.min(20, (bsr / 3) * 20);
+
+  // Organic activity (0-20 pts): smart degen count + holder growth
+  const degens = candidate.metrics?.trendingSmartDegenCount ?? 0;
+  const growth = Number(candidate.trending?.holder_growth ?? candidate.trending?.holders_growth ?? 0);
+  score += Math.min(10, degens * 2);
+  score += Math.min(10, growth > 0 ? Math.min(growth / 50, 1) * 10 : 0);
+
+  // Quality signals (0-10 pts)
+  if (candidate.devWallet?.isHolding) score += 5;
+  if (!candidate.trending?.is_wash_trading) score += 3;
+  if (candidate.metrics?.dexPaid) score += 2;
+
+  return Math.round(Math.min(100, Math.max(0, score)));
+}
+
 function normalizeHolderGrowthPercent(value) {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n)) return 0;
@@ -255,6 +285,20 @@ export function filterCandidate(candidate) {
     failures.push('dex paid: required but token is not flagged as paid');
   }
 
+  // Trench score
+  const trenchScore = candidate.metrics.trenchScore ?? 0;
+  const minTrenchScore = strat.min_trench_score ?? 0;
+  if (minTrenchScore > 0 && trenchScore < minTrenchScore) {
+    failures.push(`trench score: ${trenchScore} < min ${minTrenchScore}`);
+  }
+
+  // Rat wallet holders
+  const ratWalletCount = candidate.savedWalletExposure.ratWalletCount ?? 0;
+  const maxRatWalletHolders = strat.max_rat_wallet_holders ?? 0;
+  if (maxRatWalletHolders > 0 && ratWalletCount > maxRatWalletHolders) {
+    failures.push(`rat wallet holders: ${ratWalletCount} > max ${maxRatWalletHolders}`);
+  }
+
   return { passed: failures.length === 0, failures, strategy: strat.id };
 }
 
@@ -342,6 +386,7 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
     walletSignal,
     createdAtMs: now(),
   };
+  candidate.metrics.trenchScore = computeTrenchScore(candidate);
   candidate.filters = filterCandidate(candidate);
   return candidate;
 }
