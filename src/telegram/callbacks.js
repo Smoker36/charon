@@ -11,6 +11,7 @@ import {
   navKeyboard,
   mainMenuText,
   walletsText,
+  walletsKeyboard,
   positionsText,
   positionsKeyboard,
   historyTradeText,
@@ -22,6 +23,7 @@ import {
   topPnlText,
   topPnlKeyboard,
 } from './menus.js';
+import { autoImportWallets, purgeAutoWallets } from '../enrichment/smartWalletImport.js';
 import { sendTelegram, sendBatch, sendPositionOpen, sendTradeIntent } from './send.js';
 import { candidateSummary } from './format.js';
 import { candidateById, updateCandidateStatus } from '../db/candidates.js';
@@ -56,7 +58,7 @@ export async function handleCallback(query) {
   }
   if (data === 'menu:filters') return editMenuMessage(query, filtersText(), filtersKeyboard());
   if (data === 'menu:strategy') return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
-  if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
+  if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), walletsKeyboard());
   if (data === 'menu:positions') {
     return editMenuMessage(query, positionsText(), positionsKeyboard());
   }
@@ -65,6 +67,26 @@ export async function handleCallback(query) {
   }
   if (data === 'menu:pnl') return sendPnl(chatId, query);
   if (data === 'menu:toppnl') return editMenuMessage(query, topPnlText('pnl_percent', 'all', '30d'), topPnlKeyboard('pnl_percent', 'all', '30d'));
+  if (data.startsWith('smartimport:')) {
+    const [, source, kind, limitStr, period] = data.split(':');
+    await bot.answerCallbackQuery(query.id, { text: `Importing ${source} ${kind}…` }).catch(() => {});
+    try {
+      const result = await autoImportWallets({ source, kind, limit: Number(limitStr) || 50, period: period || '7d' });
+      await bot.sendMessage(chatId, [
+        `✅ <b>Import done</b> — ${source} ${kind} (${period})`,
+        `New: ${result.imported} · Updated: ${result.updated} · Skipped: ${result.skipped} · Errors: ${result.errors}`,
+      ].join('\n'), { parse_mode: 'HTML' });
+    } catch (err) {
+      await bot.sendMessage(chatId, `❌ Import failed: ${err.message}`);
+    }
+    return editMenuMessage(query, walletsText(), walletsKeyboard());
+  }
+  if (data.startsWith('smartpurge:')) {
+    const kind = data.split(':')[1];
+    const deleted = purgeAutoWallets(['smartwallet', 'kol'].includes(kind) ? kind : null);
+    await bot.sendMessage(chatId, `🗑 Removed ${deleted} auto-imported wallet(s).`);
+    return editMenuMessage(query, walletsText(), walletsKeyboard());
+  }
   if (data.startsWith('toppnl:')) {
     const parts = data.split(':');
     const [, orderBy, mode, window] = parts;

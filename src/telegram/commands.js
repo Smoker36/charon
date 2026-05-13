@@ -30,6 +30,7 @@ import { handleCallback, editMenuMessage } from './callbacks.js';
 import { consumeNumericFilterInput } from './input.js';
 import { runLearning, sendLessons } from '../learning/commands.js';
 import { fetchWalletPnl } from '../enrichment/wallets.js';
+import { autoImportWallets, purgeAutoWallets, autoWalletCount } from '../enrichment/smartWalletImport.js';
 
 export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
@@ -117,6 +118,33 @@ export async function handleMessage(msg) {
     return bot.sendMessage(chatId, `Removed ${label}.`);
   }
   if (text.startsWith('/wallets')) return handleCallback({ id: 'manual', data: 'menu:wallets', message: { chat: { id: chatId } } });
+  if (text.startsWith('/smartimport')) {
+    const [, sourceArg, kindArg, limitArg, periodArg, replaceArg] = text.split(/\s+/);
+    const source = ['gmgn', 'jupiter'].includes(sourceArg) ? sourceArg : 'gmgn';
+    const kind = ['smartwallet', 'kol'].includes(kindArg) ? kindArg : 'smartwallet';
+    const limit = Math.min(200, Math.max(1, Number(limitArg) || 50));
+    const period = ['1d', '7d', '30d'].includes(periodArg) ? periodArg : '7d';
+    const replace = replaceArg === 'replace';
+    await bot.sendMessage(chatId, `⏳ Importing ${limit} wallets from <b>${source}</b> as <b>${kind}</b> (period: ${period})…`, { parse_mode: 'HTML' });
+    try {
+      const result = await autoImportWallets({ source, kind, limit, period, replace });
+      return bot.sendMessage(chatId, [
+        `✅ <b>Smart Wallet Import</b>`,
+        `Source: ${result.source} · Period: ${period}`,
+        `New: ${result.imported} · Updated: ${result.updated} · Skipped: ${result.skipped} · Errors: ${result.errors}`,
+        `Total from source: ${result.total}`,
+        `Auto wallets in DB: ${autoWalletCount()}`,
+      ].join('\n'), { parse_mode: 'HTML' });
+    } catch (err) {
+      return bot.sendMessage(chatId, `❌ Import failed: ${escapeHtml(err.message)}`, { parse_mode: 'HTML' });
+    }
+  }
+  if (text.startsWith('/smartpurge')) {
+    const kindArg = text.split(/\s+/)[1];
+    const kind = ['smartwallet', 'kol'].includes(kindArg) ? kindArg : null;
+    const deleted = purgeAutoWallets(kind);
+    return bot.sendMessage(chatId, `🗑 Removed ${deleted} auto-imported wallet(s)${kind ? ` (kind: ${kind})` : ''}.`);
+  }
   if (text.startsWith('/setfilter')) {
     const { key, value } = parseSetFilter(text);
     const valid = new Set([
@@ -270,6 +298,8 @@ export function setupTelegram() {
     { command: 'walletadd', description: 'Save wallet for exposure/PnL (label address [smartwallet|kol])' },
     { command: 'walletremove', description: 'Remove saved wallet' },
     { command: 'wallets', description: 'List saved wallets' },
+    { command: 'smartimport', description: 'Auto-import smart wallets [gmgn|jupiter] [smartwallet|kol] [limit] [7d] [replace]' },
+    { command: 'smartpurge', description: 'Remove auto-imported wallets [smartwallet|kol]' },
   ]).catch(err => console.log(`[telegram] commands ${err.message}`));
 
   bot.on('callback_query', query => handleCallback(query).catch(err => console.log(`[callback] ${err.message}`)));

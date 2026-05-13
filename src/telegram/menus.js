@@ -1,6 +1,7 @@
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short } from '../format.js';
 import { numSetting, boolSetting, setting, activeStrategy, allStrategies } from '../db/settings.js';
 import { openPositionCount, tradingMode, openPositions, inactivePositions, inactivePositionCount, topPerformingPositions, pnlByStrategy } from '../db/positions.js';
+import { autoWalletCount } from '../enrichment/smartWalletImport.js';
 import { savedWallets } from '../enrichment/wallets.js';
 import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
@@ -222,14 +223,52 @@ export function mainMenuText() {
 
 export function walletsText() {
   const rows = savedWallets();
-  if (!rows.length) return `👛 <b>Saved Wallets</b>\n\nNo saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol]`;
+  const autoCount = autoWalletCount();
+  const header = [`👛 <b>Saved Wallets</b> (${rows.length} total · ${autoCount} auto-imported)`];
+  if (!rows.length) return `${header[0]}\n\nNo saved wallets.\nUse /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol]\nOr /smartimport to auto-import from GMGN.`;
   const groups = { wallet: [], smartwallet: [], kol: [] };
   for (const row of rows) (groups[row.kind || 'wallet'] || groups.wallet).push(row);
+  const MAX_PER_GROUP = 15;
+  const fmt = (r) => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`;
   const sections = [];
-  if (groups.wallet.length) sections.push(`<b>Wallets</b>\n${groups.wallet.map(r => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`).join('\n')}`);
-  if (groups.smartwallet.length) sections.push(`<b>Smart Wallets</b>\n${groups.smartwallet.map(r => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`).join('\n')}`);
-  if (groups.kol.length) sections.push(`<b>KOL Wallets</b>\n${groups.kol.map(r => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`).join('\n')}`);
-  return `👛 <b>Saved Wallets</b>\n\n${sections.join('\n\n')}`;
+  if (groups.wallet.length) {
+    const shown = groups.wallet.slice(0, MAX_PER_GROUP);
+    const hidden = groups.wallet.length - shown.length;
+    sections.push(`<b>Wallets (${groups.wallet.length})</b>\n${shown.map(fmt).join('\n')}${hidden > 0 ? `\n<i>…and ${hidden} more</i>` : ''}`);
+  }
+  if (groups.smartwallet.length) {
+    const shown = groups.smartwallet.slice(0, MAX_PER_GROUP);
+    const hidden = groups.smartwallet.length - shown.length;
+    sections.push(`<b>Smart Wallets (${groups.smartwallet.length})</b>\n${shown.map(fmt).join('\n')}${hidden > 0 ? `\n<i>…and ${hidden} more</i>` : ''}`);
+  }
+  if (groups.kol.length) {
+    const shown = groups.kol.slice(0, MAX_PER_GROUP);
+    const hidden = groups.kol.length - shown.length;
+    sections.push(`<b>KOL Wallets (${groups.kol.length})</b>\n${shown.map(fmt).join('\n')}${hidden > 0 ? `\n<i>…and ${hidden} more</i>` : ''}`);
+  }
+  return `${header[0]}\n\n${sections.join('\n\n')}`;
+}
+
+export function walletsKeyboard() {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '⬇ Import Smart (GMGN 7d)', callback_data: 'smartimport:gmgn:smartwallet:50:7d' },
+          { text: '⬇ Import KOL (GMGN 7d)', callback_data: 'smartimport:gmgn:kol:50:7d' },
+        ],
+        [
+          { text: '⬇ Smart 30d', callback_data: 'smartimport:gmgn:smartwallet:50:30d' },
+          { text: '⬇ KOL 30d', callback_data: 'smartimport:gmgn:kol:50:30d' },
+        ],
+        [
+          { text: '🗑 Purge Auto Smart', callback_data: 'smartpurge:smartwallet' },
+          { text: '🗑 Purge Auto KOL', callback_data: 'smartpurge:kol' },
+        ],
+        [{ text: 'Back', callback_data: 'menu:main' }],
+      ],
+    },
+  };
 }
 
 export function positionsText() {

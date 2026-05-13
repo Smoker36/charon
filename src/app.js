@@ -57,6 +57,15 @@ export async function startCharon() {
     log('bot', `${APP_NAME} started (standalone mode)`);
   }
 
+  // Smart wallet auto-refresh (optional, off by default)
+  const { autoImportWallets } = await import('./enrichment/smartWalletImport.js');
+  const { numSetting: ns } = await import('./db/settings.js');
+  const smartRefreshMs = ns('smart_wallet_auto_refresh_ms', 0);
+  if (smartRefreshMs > 0) {
+    setInterval(() => autoImportWallets({ source: 'gmgn', kind: 'smartwallet', limit: 50, period: '7d' }).catch(err => log('smartwallet', err.message)), smartRefreshMs);
+    log('bot', `Smart wallet auto-refresh every ${Math.round(smartRefreshMs / 60000)}m`);
+  }
+
   // Position monitoring runs in both modes
   const trackPositions = makeFailureTracker('position monitor', (msg) => sendTelegram(msg));
   setInterval(() => trackPositions(() => monitorPositions()), POSITION_CHECK_MS);
