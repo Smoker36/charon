@@ -62,6 +62,14 @@ export function candidateSummary(candidate, decision = null) {
       `${candidate.twitterNarrative.metrics.replies} replies`,
       `${candidate.twitterNarrative.metrics.quotes} quotes`,
     ].join(' · ') : null,
+    (() => {
+      const ts = candidate.metrics?.trenchScore ?? null;
+      const ratCount = candidate.savedWalletExposure?.ratWalletCount ?? 0;
+      const parts = [];
+      if (ts != null) parts.push(`Trench score: <b>${ts}/100</b>`);
+      if (ratCount > 0) parts.push(`Rat wallets: <b>${ratCount}</b> ⚠️`);
+      return parts.length ? parts.join(' · ') : null;
+    })(),
     candidate.walletSignal ? `Triggered by: <b>${escapeHtml(candidate.walletSignal.kind)}</b> <code>${escapeHtml(candidate.walletSignal.label)}</code>` : null,
     candidate.devWallet ? `Dev: ${candidate.devWallet.isHolding ? '✅ holding' : '⚠️ dumped'}${candidate.devWallet.soldPercent != null ? ` (sold ${candidate.devWallet.soldPercent.toFixed(0)}%)` : ''} [${escapeHtml(candidate.devWallet.dataSource)}]` : null,
     candidate.feeClaim ? `Fee claim: <b>${fmtSol(candidate.feeClaim.distributedSol)} SOL</b>` : null,

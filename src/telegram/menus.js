@@ -69,6 +69,8 @@ export function filtersText() {
     `Min smart wallet holders: ${strat.min_smart_wallet_holders || 'off'}`,
     `Min KOL holders: ${strat.min_kol_holders || 'off'}`,
     `Min smart degen: ${strat.min_smart_degen_count || 'off'}`,
+    `Min trench score: ${strat.min_trench_score > 0 ? strat.min_trench_score : 'off'}`,
+    `Max rat wallet holders: ${strat.max_rat_wallet_holders > 0 ? strat.max_rat_wallet_holders : 'off'}`,
     `Dev holding required: ${strat.require_dev_holding ? 'yes' : 'no'}`,
     `Max dev sold: ${strat.max_dev_sold_pct > 0 ? `${strat.max_dev_sold_pct}%` : 'off'}`,
     strat.max_ath_distance_pct < 0 ? `Max ATH distance: ${strat.max_ath_distance_pct}%` : null,
@@ -112,6 +114,8 @@ export const strategyNumericLabels = {
   min_smart_wallet_holders: 'minimum smart-wallet holders',
   min_kol_holders: 'minimum KOL holders',
   min_smart_degen_count: 'minimum smart degen count (GMGN/Jupiter organic buyers)',
+  min_trench_score: 'minimum trench score 0-100 (composite: fees+smart wallets+buy pressure+organic activity)',
+  max_rat_wallet_holders: 'maximum rat wallet holders (0 = off)',
   max_dev_sold_pct: 'maximum dev wallet sold percent (0 = off)',
   max_ath_distance_pct: 'maximum ATH distance percent (-40 = 40% below ATH, 0 = off)',
   min_source_count: 'minimum source count',
@@ -445,6 +449,10 @@ export function strategyKeyboard() {
       { text: `Smart ${strat.min_smart_wallet_holders || 'off'}`, callback_data: 'stratinput:min_smart_wallet_holders' },
       { text: `KOL ${strat.min_kol_holders || 'off'}`, callback_data: 'stratinput:min_kol_holders' },
       { text: `SmartDegen ${strat.min_smart_degen_count || 'off'}`, callback_data: 'stratcfg:min_smart_degen_count' },
+    ],
+    [
+      { text: `Trench Score ${strat.min_trench_score > 0 ? strat.min_trench_score : 'off'}`, callback_data: 'stratinput:min_trench_score' },
+      { text: `Max Rat ${strat.max_rat_wallet_holders > 0 ? strat.max_rat_wallet_holders : 'off'}`, callback_data: 'stratinput:max_rat_wallet_holders' },
     ],
     [
       { text: `Dev Hold ${strat.require_dev_holding ? 'on' : 'off'}`, callback_data: 'stratcfg:require_dev_holding' },
