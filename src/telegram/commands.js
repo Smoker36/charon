@@ -30,6 +30,8 @@ import { handleCallback, editMenuMessage } from './callbacks.js';
 import { consumeNumericFilterInput } from './input.js';
 import { runLearning, sendLessons } from '../learning/commands.js';
 import { fetchWalletPnl } from '../enrichment/wallets.js';
+import { autoImportWallets, purgeAutoWallets, autoWalletCount } from '../enrichment/smartWalletImport.js';
+import { walletMonitorStats } from '../signals/walletMonitor.js';
 
 export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
@@ -100,13 +102,15 @@ export async function handleMessage(msg) {
     return sendCandidate(chatId, row.id);
   }
   if (text.startsWith('/walletadd')) {
-    const [, label, address] = text.split(/\s+/);
-    if (!label || !address) return bot.sendMessage(chatId, 'Usage: /walletadd <label> <address>');
+    const [, label, address, kindArg] = text.split(/\s+/);
+    if (!label || !address) return bot.sendMessage(chatId, 'Usage: /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol]', { parse_mode: 'HTML' });
+    const validKinds = new Set(['wallet', 'smartwallet', 'kol']);
+    const kind = validKinds.has(kindArg) ? kindArg : 'wallet';
     db.prepare(`
-      INSERT INTO saved_wallets (label, address, created_at_ms) VALUES (?, ?, ?)
-      ON CONFLICT(label) DO UPDATE SET address = excluded.address
-    `).run(label, address, now());
-    return bot.sendMessage(chatId, `Saved wallet ${label}.`);
+      INSERT INTO saved_wallets (label, address, created_at_ms, kind) VALUES (?, ?, ?, ?)
+      ON CONFLICT(label) DO UPDATE SET address = excluded.address, kind = excluded.kind
+    `).run(label, address, now(), kind);
+    return bot.sendMessage(chatId, `Saved wallet <b>${escapeHtml(label)}</b> (${kind}).`, { parse_mode: 'HTML' });
   }
   if (text.startsWith('/walletremove')) {
     const label = text.split(/\s+/)[1];
@@ -115,6 +119,67 @@ export async function handleMessage(msg) {
     return bot.sendMessage(chatId, `Removed ${label}.`);
   }
   if (text.startsWith('/wallets')) return handleCallback({ id: 'manual', data: 'menu:wallets', message: { chat: { id: chatId } } });
+  if (text.startsWith('/smartimport')) {
+    const [, sourceArg, kindArg, limitArg, periodArg, replaceArg] = text.split(/\s+/);
+    const source = ['gmgn', 'jupiter'].includes(sourceArg) ? sourceArg : 'gmgn';
+    const kind = ['smartwallet', 'kol'].includes(kindArg) ? kindArg : 'smartwallet';
+    const limit = Math.min(200, Math.max(1, Number(limitArg) || 50));
+    const period = ['1d', '7d', '30d'].includes(periodArg) ? periodArg : '7d';
+    const replace = replaceArg === 'replace';
+    await bot.sendMessage(chatId, `⏳ Importing ${limit} wallets from <b>${source}</b> as <b>${kind}</b> (period: ${period})…`, { parse_mode: 'HTML' });
+    try {
+      const result = await autoImportWallets({ source, kind, limit, period, replace });
+      return bot.sendMessage(chatId, [
+        `✅ <b>Smart Wallet Import</b>`,
+        `Source: ${result.source} · Period: ${period}`,
+        `New: ${result.imported} · Updated: ${result.updated} · Skipped: ${result.skipped} · Errors: ${result.errors}`,
+        `Total from source: ${result.total}`,
+        `Auto wallets in DB: ${autoWalletCount()}`,
+      ].join('\n'), { parse_mode: 'HTML' });
+    } catch (err) {
+      return bot.sendMessage(chatId, `❌ Import failed: ${escapeHtml(err.message)}`, { parse_mode: 'HTML' });
+    }
+  }
+  if (text.startsWith('/walletmonitor')) {
+    const parts = text.split(/\s+/);
+    const intervalArg = parts[1]; // e.g. "30s", "60s", "off"
+    if (intervalArg) {
+      let ms = 0;
+      if (intervalArg !== 'off') {
+        const match = intervalArg.match(/^(\d+)(s|m)?$/);
+        if (match) {
+          ms = Number(match[1]) * (match[2] === 'm' ? 60000 : 1000);
+          ms = Math.max(10_000, ms); // minimum 10s
+        } else {
+          return bot.sendMessage(chatId, 'Usage: /walletmonitor [30s|60s|5m|off]');
+        }
+      }
+      setSetting('smart_wallet_monitor_ms', String(ms));
+      await bot.sendMessage(chatId, ms > 0
+        ? `✅ Wallet monitor set to every ${Math.round(ms / 1000)}s.\n<i>Restart bot to apply.</i>`
+        : `⏹ Wallet monitor disabled.\n<i>Restart bot to apply.</i>`,
+        { parse_mode: 'HTML' }
+      );
+    }
+    const stats = walletMonitorStats();
+    const monitorMs = numSetting('smart_wallet_monitor_ms', 0);
+    return bot.sendMessage(chatId, [
+      `📡 <b>Wallet Buy Monitor</b>`,
+      `Status: <b>${monitorMs > 0 ? `active (${Math.round(monitorMs / 1000)}s)` : 'off'}</b>`,
+      `Monitoring: ${stats.monitoring} wallets`,
+      `Cursors set: ${stats.cursors}`,
+      `Seen txns: ${stats.seenTxns}`,
+      ``,
+      `Use /walletmonitor 30s to enable (min 10s)`,
+      `Use /walletmonitor off to disable`,
+    ].join('\n'), { parse_mode: 'HTML' });
+  }
+  if (text.startsWith('/smartpurge')) {
+    const kindArg = text.split(/\s+/)[1];
+    const kind = ['smartwallet', 'kol'].includes(kindArg) ? kindArg : null;
+    const deleted = purgeAutoWallets(kind);
+    return bot.sendMessage(chatId, `🗑 Removed ${deleted} auto-imported wallet(s)${kind ? ` (kind: ${kind})` : ''}.`);
+  }
   if (text.startsWith('/setfilter')) {
     const { key, value } = parseSetFilter(text);
     const valid = new Set([
@@ -265,9 +330,12 @@ export function setupTelegram() {
     { command: 'learn', description: 'Run manual learning report' },
     { command: 'lessons', description: 'Show active screening lessons' },
     { command: 'setfilter', description: 'Set a filter value' },
-    { command: 'walletadd', description: 'Save wallet for exposure/PnL' },
+    { command: 'walletadd', description: 'Save wallet for exposure/PnL (label address [smartwallet|kol])' },
     { command: 'walletremove', description: 'Remove saved wallet' },
     { command: 'wallets', description: 'List saved wallets' },
+    { command: 'smartimport', description: 'Auto-import smart wallets [gmgn|jupiter] [smartwallet|kol] [limit] [7d] [replace]' },
+    { command: 'smartpurge', description: 'Remove auto-imported wallets [smartwallet|kol]' },
+    { command: 'walletmonitor', description: 'Show/set wallet buy monitor interval (30s|60s|5m|off)' },
   ]).catch(err => console.log(`[telegram] commands ${err.message}`));
 
   bot.on('callback_query', query => handleCallback(query).catch(err => console.log(`[callback] ${err.message}`)));
@@ -310,7 +378,8 @@ export async function sendPnl(chatId, query = null) {
     walletLines.push(`<b>Wallet PnL</b>\n${chunks.join('\n\n')}`);
   }
   const text = `📊 <b>PnL</b>\n\n${modeLines.join('\n\n')}${walletLines.length ? `\n\n${walletLines.join('\n\n')}` : ''}`;
-  return query ? editMenuMessage(query, text, navKeyboard()) : bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+  const pnlKeyboard = navKeyboard([[{ text: '🏆 Top Performance', callback_data: 'menu:toppnl' }]]);
+  return query ? editMenuMessage(query, text, pnlKeyboard) : bot.sendMessage(chatId, text, { parse_mode: 'HTML', ...pnlKeyboard });
 }
 
 function summarizeModePnl(mode, title) {

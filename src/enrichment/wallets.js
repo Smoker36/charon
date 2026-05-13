@@ -8,14 +8,20 @@ export function savedWallets() {
 export async function fetchSavedWalletExposure(mint, holders) {
   const wallets = savedWallets();
   if (!wallets.length || !holders?.holders?.length) {
-    return { holderCount: 0, checked: wallets.length, wallets: [] };
+    return { holderCount: 0, checked: wallets.length, wallets: [], smartWalletCount: 0, kolCount: 0, smartWallets: [], kolWallets: [] };
   }
   const holderSet = new Set(holders.holders.map(h => h.address));
   const matched = wallets.filter(wallet => holderSet.has(wallet.address));
+  const smartMatched = matched.filter(w => w.kind === 'smartwallet');
+  const kolMatched = matched.filter(w => w.kind === 'kol');
   return {
     holderCount: matched.length,
     checked: wallets.length,
     wallets: matched.map(w => w.label),
+    smartWalletCount: smartMatched.length,
+    kolCount: kolMatched.length,
+    smartWallets: smartMatched.map(w => w.label),
+    kolWallets: kolMatched.map(w => w.label),
   };
 }
 

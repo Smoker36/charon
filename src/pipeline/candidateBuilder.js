@@ -75,6 +75,8 @@ export function buildFeeSnapshot(fee, signature) {
 }
 
 export function signalLabel(signals = {}) {
+  if (signals.route === 'smart_wallet_buy') return '🧠 smart wallet buy';
+  if (signals.route === 'kol_buy') return '🌟 KOL buy';
   return [
     signals.hasFeeClaim ? 'fees' : null,
     signals.hasGraduated ? 'graduated' : null,
@@ -104,13 +106,19 @@ export function filterCandidate(candidate) {
   const dexPaidEnabled = boolSetting('dex_paid', false);
   const tokenAgeMs = Number(candidate.metrics.tokenAgeMs || 0);
 
+  // Wallet-signal routes (smart_wallet_buy / kol_buy) bypass fee requirement —
+  // the trigger is the wallet buy itself, not a fee claim event.
+  const isWalletSignal = candidate.walletSignal != null ||
+    candidate.signals?.route === 'smart_wallet_buy' ||
+    candidate.signals?.route === 'kol_buy';
+
   // Fee claim check
   if (candidate.feeClaim) {
     const minFee = strat.min_fee_claim_sol ?? 0.5;
     if (minFee > 0 && feeSol < minFee) {
       failures.push(`fee claim: ${feeSol} SOL < min ${minFee} SOL`);
     }
-  } else if (strat.require_fee_claim) {
+  } else if (strat.require_fee_claim && !isWalletSignal) {
     failures.push('fee claim: missing (required by strategy)');
   }
 
@@ -152,6 +160,18 @@ export function filterCandidate(candidate) {
   // Saved wallet holders
   if (strat.min_saved_wallet_holders > 0 && savedCount < strat.min_saved_wallet_holders) {
     failures.push(`saved wallet holders: ${savedCount} < ${strat.min_saved_wallet_holders}`);
+  }
+
+  // Smart wallet holders
+  const smartWalletCount = candidate.savedWalletExposure.smartWalletCount ?? 0;
+  if (strat.min_smart_wallet_holders > 0 && smartWalletCount < strat.min_smart_wallet_holders) {
+    failures.push(`smart wallet holders: ${smartWalletCount} < ${strat.min_smart_wallet_holders}`);
+  }
+
+  // KOL holders
+  const kolCount = candidate.savedWalletExposure.kolCount ?? 0;
+  if (strat.min_kol_holders > 0 && kolCount < strat.min_kol_holders) {
+    failures.push(`KOL holders: ${kolCount} < ${strat.min_kol_holders}`);
   }
 
   // ATH distance (dip buy strategy)
@@ -217,14 +237,10 @@ export function filterCandidate(candidate) {
     failures.push('dex paid: required but token is not flagged as paid');
   }
 
-  if (dexPaidEnabled && !candidate.metrics.dexPaid) {
-    failures.push('dex paid: required but token is not flagged as paid');
-  }
-
   return { passed: failures.length === 0, failures, strategy: strat.id };
 }
 
-export async function buildCandidate({ mint, fee = null, signature = null, graduatedCoin = null, trendingToken = null, route }) {
+export async function buildCandidate({ mint, fee = null, signature = null, graduatedCoin = null, trendingToken = null, route, walletSignal = null }) {
   const strat = activeStrategy();
   const gmgn = await fetchGmgnTokenInfo(mint);
   const jupiterAsset = await fetchJupiterAsset(mint);
@@ -302,6 +318,7 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
     chart,
     savedWalletExposure,
     twitterNarrative,
+    walletSignal,
     createdAtMs: now(),
   };
   candidate.filters = filterCandidate(candidate);

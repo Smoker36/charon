@@ -2,6 +2,16 @@ export function now() {
   return Date.now();
 }
 
+export function log(tag, ...args) {
+  const ts = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
+  console.log(`${ts} [${tag}]`, ...args);
+}
+
+export function logError(tag, ...args) {
+  const ts = new Date().toISOString().slice(11, 23);
+  console.error(`${ts} [${tag}]`, ...args);
+}
+
 export function safeJson(value, fallback = null) {
   try {
     return JSON.parse(value);
@@ -151,7 +161,7 @@ export function makeFailureTracker(name, alertFn, threshold = 3) {
       count = 0;
     } catch (err) {
       count++;
-      console.log(`[${name}] ${err.message}`);
+      log(name, err.message);
       if (count >= threshold) {
         alertFn(`⚠️ <b>${name}</b> failed ${count}x in a row: ${err.message}`).catch(() => {});
         count = 0;

@@ -11,6 +11,7 @@ import {
   navKeyboard,
   mainMenuText,
   walletsText,
+  walletsKeyboard,
   positionsText,
   positionsKeyboard,
   historyTradeText,
@@ -19,7 +20,10 @@ import {
   sendTpSlDefaults,
   strategyMenuText,
   strategyKeyboard,
+  topPnlText,
+  topPnlKeyboard,
 } from './menus.js';
+import { autoImportWallets, purgeAutoWallets } from '../enrichment/smartWalletImport.js';
 import { sendTelegram, sendBatch, sendPositionOpen, sendTradeIntent } from './send.js';
 import { candidateSummary } from './format.js';
 import { candidateById, updateCandidateStatus } from '../db/candidates.js';
@@ -54,7 +58,7 @@ export async function handleCallback(query) {
   }
   if (data === 'menu:filters') return editMenuMessage(query, filtersText(), filtersKeyboard());
   if (data === 'menu:strategy') return editMenuMessage(query, strategyMenuText(), strategyKeyboard());
-  if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), navKeyboard());
+  if (data === 'menu:wallets') return editMenuMessage(query, walletsText(), walletsKeyboard());
   if (data === 'menu:positions') {
     return editMenuMessage(query, positionsText(), positionsKeyboard());
   }
@@ -62,6 +66,46 @@ export async function handleCallback(query) {
     return editMenuMessage(query, historyTradeText(), historyTradeKeyboard());
   }
   if (data === 'menu:pnl') return sendPnl(chatId, query);
+  if (data === 'menu:toppnl') return editMenuMessage(query, topPnlText('pnl_percent', 'all', '30d'), topPnlKeyboard('pnl_percent', 'all', '30d'));
+  if (data === 'walletmonitor:status') {
+    const { walletMonitorStats } = await import('../signals/walletMonitor.js');
+    const stats = walletMonitorStats();
+    const { numSetting: ns } = await import('../db/settings.js');
+    const monitorMs = ns('smart_wallet_monitor_ms', 0);
+    return bot.sendMessage(chatId, [
+      `📡 <b>Wallet Buy Monitor</b>`,
+      `Status: <b>${monitorMs > 0 ? `active (every ${Math.round(monitorMs / 1000)}s)` : 'off'}</b>`,
+      `Watching: ${stats.monitoring} wallets · Cursors: ${stats.cursors}`,
+      ``,
+      `To enable: /walletmonitor 30s`,
+      `To disable: /walletmonitor off`,
+    ].join('\n'), { parse_mode: 'HTML' });
+  }
+  if (data.startsWith('smartimport:')) {
+    const [, source, kind, limitStr, period] = data.split(':');
+    await bot.answerCallbackQuery(query.id, { text: `Importing ${source} ${kind}…` }).catch(() => {});
+    try {
+      const result = await autoImportWallets({ source, kind, limit: Number(limitStr) || 50, period: period || '7d' });
+      await bot.sendMessage(chatId, [
+        `✅ <b>Import done</b> — ${source} ${kind} (${period})`,
+        `New: ${result.imported} · Updated: ${result.updated} · Skipped: ${result.skipped} · Errors: ${result.errors}`,
+      ].join('\n'), { parse_mode: 'HTML' });
+    } catch (err) {
+      await bot.sendMessage(chatId, `❌ Import failed: ${err.message}`);
+    }
+    return editMenuMessage(query, walletsText(), walletsKeyboard());
+  }
+  if (data.startsWith('smartpurge:')) {
+    const kind = data.split(':')[1];
+    const deleted = purgeAutoWallets(['smartwallet', 'kol'].includes(kind) ? kind : null);
+    await bot.sendMessage(chatId, `🗑 Removed ${deleted} auto-imported wallet(s).`);
+    return editMenuMessage(query, walletsText(), walletsKeyboard());
+  }
+  if (data.startsWith('toppnl:')) {
+    const parts = data.split(':');
+    const [, orderBy, mode, window] = parts;
+    return editMenuMessage(query, topPnlText(orderBy, mode, window), topPnlKeyboard(orderBy, mode, window));
+  }
   if (data === 'menu:learn') return editMenuMessage(query, '🧠 <b>Learning</b>\nUse <code>/learn 7d</code> to generate lessons and <code>/lessons</code> to view saved lessons.', navKeyboard());
   if (data === 'menu:settings') return editMenuMessage(query, `${agentText()}\n\n${filtersText()}`, navKeyboard([
     [
@@ -185,6 +229,8 @@ const STRAT_PRESETS = {
   token_age_max_ms: [0, 1800000, 3600000],
   min_holder_growth_pct: [0, 10, 25, 50, 100, 200],
   min_buy_sell_ratio: [0, 1, 1.2, 1.5, 2, 3],
+  min_smart_wallet_holders: [0, 1, 2, 3, 5],
+  min_kol_holders: [0, 1, 2, 3, 5],
 };
 
 function formatStratValue(key, value) {

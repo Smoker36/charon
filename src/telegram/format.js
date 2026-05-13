@@ -12,6 +12,8 @@ export function formatRecipients(shareholders) {
 }
 
 export function signalLabel(signals = {}) {
+  if (signals.route === 'smart_wallet_buy') return '🧠 smart wallet buy';
+  if (signals.route === 'kol_buy') return '🌟 KOL buy';
   return [
     signals.hasFeeClaim ? 'fees' : null,
     signals.hasGraduated ? 'graduated' : null,
@@ -60,6 +62,7 @@ export function candidateSummary(candidate, decision = null) {
       `${candidate.twitterNarrative.metrics.replies} replies`,
       `${candidate.twitterNarrative.metrics.quotes} quotes`,
     ].join(' · ') : null,
+    candidate.walletSignal ? `Triggered by: <b>${escapeHtml(candidate.walletSignal.kind)}</b> <code>${escapeHtml(candidate.walletSignal.label)}</code>` : null,
     candidate.feeClaim ? `Fee claim: <b>${fmtSol(candidate.feeClaim.distributedSol)} SOL</b>` : null,
     candidate.twitterNarrative?.text ? `Narrative: ${escapeHtml(candidate.twitterNarrative.text.slice(0, 220))}` : null,
     decision ? `LLM: <b>${escapeHtml(decision.verdict)}</b> ${fmtPct(decision.confidence)} — ${escapeHtml(decision.reason || '')}` : null,

@@ -208,6 +208,7 @@ export function initDb() {
   ensureColumn('dry_run_positions', 'strategy_id', "TEXT DEFAULT 'sniper'");
   ensureColumn('dry_run_positions', 'partial_tp_done', 'INTEGER DEFAULT 0');
   ensureColumn('decision_logs', 'strategy_id', 'TEXT');
+  ensureColumn('saved_wallets', 'kind', "TEXT NOT NULL DEFAULT 'wallet'")
 
   const defaults = {
     agent_enabled: 'true',
@@ -228,6 +229,10 @@ export function initDb() {
     min_graduated_volume_usd: '0',
     max_top20_holder_percent: '100',
     min_saved_wallet_holders: '0',
+    min_smart_wallet_holders: '0',
+    min_kol_holders: '0',
+    smart_wallet_auto_refresh_ms: '0',
+    smart_wallet_monitor_ms: '0',
     gmgn_request_delay_ms: process.env.GMGN_REQUEST_DELAY_MS || '2500',
     gmgn_max_retries: process.env.GMGN_MAX_RETRIES || '2',
     trending_enabled: process.env.TRENDING_ENABLED || 'true',
@@ -263,6 +268,8 @@ export function initDb() {
     min_holders: 0,
     max_top20_holder_percent: 100,
     min_saved_wallet_holders: 0,
+    min_smart_wallet_holders: 0,
+    min_kol_holders: 0,
     max_ath_distance_pct: 0,
     min_graduated_volume_usd: 0,
     trending_min_volume_usd: 0,
@@ -303,6 +310,8 @@ export function initDb() {
     min_holders: 0,
     max_top20_holder_percent: 100,
     min_saved_wallet_holders: 0,
+    min_smart_wallet_holders: 0,
+    min_kol_holders: 0,
     max_ath_distance_pct: -40,
     min_graduated_volume_usd: 0,
     trending_min_volume_usd: 0,
@@ -343,6 +352,8 @@ export function initDb() {
     min_holders: 1000,
     max_top20_holder_percent: 50,
     min_saved_wallet_holders: 0,
+    min_smart_wallet_holders: 0,
+    min_kol_holders: 0,
     max_ath_distance_pct: 0,
     min_graduated_volume_usd: 0,
     trending_min_volume_usd: 5000,
@@ -383,6 +394,8 @@ export function initDb() {
     min_holders: 0,
     max_top20_holder_percent: 100,
     min_saved_wallet_holders: 0,
+    min_smart_wallet_holders: 0,
+    min_kol_holders: 0,
     max_ath_distance_pct: 0,
     min_graduated_volume_usd: 0,
     trending_min_volume_usd: 0,
@@ -423,6 +436,8 @@ export function initDb() {
     min_holders: 0,
     max_top20_holder_percent: 100,
     min_saved_wallet_holders: 0,
+    min_smart_wallet_holders: 0,
+    min_kol_holders: 0,
     max_ath_distance_pct: 0,
     min_graduated_volume_usd: 0,
     trending_min_volume_usd: 0,

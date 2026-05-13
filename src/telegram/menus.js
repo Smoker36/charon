@@ -1,6 +1,8 @@
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short } from '../format.js';
 import { numSetting, boolSetting, setting, activeStrategy, allStrategies } from '../db/settings.js';
-import { openPositionCount, tradingMode, openPositions, inactivePositions, inactivePositionCount } from '../db/positions.js';
+import { openPositionCount, tradingMode, openPositions, inactivePositions, inactivePositionCount, topPerformingPositions, pnlByStrategy } from '../db/positions.js';
+import { autoWalletCount } from '../enrichment/smartWalletImport.js';
+import { walletMonitorStats } from '../signals/walletMonitor.js';
 import { savedWallets } from '../enrichment/wallets.js';
 import { gmgnStatusText } from '../enrichment/gmgn.js';
 import { formatPosition } from './format.js';
@@ -47,27 +49,6 @@ export function menuKeyboard() {
           { text: 'PnL', callback_data: 'menu:pnl' },
           { text: 'Learning', callback_data: 'menu:learn' },
         ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
-        [
-          { text: 'Learning', callback_data: 'menu:learn' },
-        ],
       ],
     },
   };
@@ -85,6 +66,8 @@ export function filtersText() {
     `Min holders: ${strat.min_holders || 'off'}`,
     `Max holder: ${strat.max_top20_holder_percent < 100 ? fmtPct(strat.max_top20_holder_percent) : 'off'}`,
     `Min saved holders: ${strat.min_saved_wallet_holders || 'off'}`,
+    `Min smart wallet holders: ${strat.min_smart_wallet_holders || 'off'}`,
+    `Min KOL holders: ${strat.min_kol_holders || 'off'}`,
     strat.max_ath_distance_pct < 0 ? `Max ATH distance: ${strat.max_ath_distance_pct}%` : null,
     '',
     `Min sources: ${strat.min_source_count}`,
@@ -123,6 +106,8 @@ export const strategyNumericLabels = {
   min_holders: 'minimum holders',
   max_top20_holder_percent: 'maximum top holder percent',
   min_saved_wallet_holders: 'minimum saved-wallet holders',
+  min_smart_wallet_holders: 'minimum smart-wallet holders',
+  min_kol_holders: 'minimum KOL holders',
   max_ath_distance_pct: 'maximum ATH distance percent (-40 = 40% below ATH, 0 = off)',
   min_source_count: 'minimum source count',
   token_age_max_ms: 'maximum token age milliseconds',
@@ -239,10 +224,55 @@ export function mainMenuText() {
 
 export function walletsText() {
   const rows = savedWallets();
-  const body = rows.length
-    ? rows.map(row => `• <b>${escapeHtml(row.label)}</b>: <code>${escapeHtml(row.address)}</code>`).join('\n')
-    : 'No saved wallets. Use /walletadd &lt;label&gt; &lt;address&gt;';
-  return `👛 <b>Saved Wallets</b>\n\n${body}`;
+  const autoCount = autoWalletCount();
+  const header = [`👛 <b>Saved Wallets</b> (${rows.length} total · ${autoCount} auto-imported)`];
+  if (!rows.length) return `${header[0]}\n\nNo saved wallets.\nUse /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol]\nOr /smartimport to auto-import from GMGN.`;
+  const groups = { wallet: [], smartwallet: [], kol: [] };
+  for (const row of rows) (groups[row.kind || 'wallet'] || groups.wallet).push(row);
+  const MAX_PER_GROUP = 15;
+  const fmt = (r) => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`;
+  const sections = [];
+  if (groups.wallet.length) {
+    const shown = groups.wallet.slice(0, MAX_PER_GROUP);
+    const hidden = groups.wallet.length - shown.length;
+    sections.push(`<b>Wallets (${groups.wallet.length})</b>\n${shown.map(fmt).join('\n')}${hidden > 0 ? `\n<i>…and ${hidden} more</i>` : ''}`);
+  }
+  if (groups.smartwallet.length) {
+    const shown = groups.smartwallet.slice(0, MAX_PER_GROUP);
+    const hidden = groups.smartwallet.length - shown.length;
+    sections.push(`<b>Smart Wallets (${groups.smartwallet.length})</b>\n${shown.map(fmt).join('\n')}${hidden > 0 ? `\n<i>…and ${hidden} more</i>` : ''}`);
+  }
+  if (groups.kol.length) {
+    const shown = groups.kol.slice(0, MAX_PER_GROUP);
+    const hidden = groups.kol.length - shown.length;
+    sections.push(`<b>KOL Wallets (${groups.kol.length})</b>\n${shown.map(fmt).join('\n')}${hidden > 0 ? `\n<i>…and ${hidden} more</i>` : ''}`);
+  }
+  return `${header[0]}\n\n${sections.join('\n\n')}`;
+}
+
+export function walletsKeyboard() {
+  const stats = walletMonitorStats();
+  const monitorLabel = stats.cursors > 0 ? `📡 Monitor ON (${stats.monitoring})` : `📡 Monitor OFF`;
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: monitorLabel, callback_data: 'walletmonitor:status' }],
+        [
+          { text: '⬇ Import Smart (GMGN 7d)', callback_data: 'smartimport:gmgn:smartwallet:50:7d' },
+          { text: '⬇ Import KOL (GMGN 7d)', callback_data: 'smartimport:gmgn:kol:50:7d' },
+        ],
+        [
+          { text: '⬇ Smart 30d', callback_data: 'smartimport:gmgn:smartwallet:50:30d' },
+          { text: '⬇ KOL 30d', callback_data: 'smartimport:gmgn:kol:50:30d' },
+        ],
+        [
+          { text: '🗑 Purge Auto Smart', callback_data: 'smartpurge:smartwallet' },
+          { text: '🗑 Purge Auto KOL', callback_data: 'smartpurge:kol' },
+        ],
+        [{ text: 'Back', callback_data: 'menu:main' }],
+      ],
+    },
+  };
 }
 
 export function positionsText() {
@@ -405,6 +435,10 @@ export function strategyKeyboard() {
     [
       { text: `Saved ${strat.min_saved_wallet_holders || 'off'}`, callback_data: 'stratinput:min_saved_wallet_holders' },
       { text: `ATH ${strat.max_ath_distance_pct < 0 ? `${strat.max_ath_distance_pct}%` : 'off'}`, callback_data: 'stratinput:max_ath_distance_pct' },
+    ],
+    [
+      { text: `Smart ${strat.min_smart_wallet_holders || 'off'}`, callback_data: 'stratinput:min_smart_wallet_holders' },
+      { text: `KOL ${strat.min_kol_holders || 'off'}`, callback_data: 'stratinput:min_kol_holders' },
     ],
     [
       { text: `Age ${strat.token_age_max_ms > 0 ? Math.round(strat.token_age_max_ms / 60000) + 'm' : 'off'}`, callback_data: 'stratinput:token_age_max_ms' },
@@ -571,6 +605,56 @@ export async function sendTpSlDefaults(chatId, query = null) {
   if (query) return editMenuMessage(query, agentText(), keyboard);
   const { bot } = await import('./bot.js');
   await bot.sendMessage(chatId, agentText(), { parse_mode: 'HTML', ...keyboard });
+}
+
+export function topPnlText(orderBy = 'pnl_percent', mode = 'all', window = '30d') {
+  const windowMap = { '7d': 7 * 24 * 3600000, '30d': 30 * 24 * 3600000, 'all': 0 };
+  const windowMs = windowMap[window] ?? 30 * 24 * 3600000;
+  const positions = topPerformingPositions({ limit: 10, mode, orderBy, windowMs });
+  const stratRows = pnlByStrategy({ mode, windowMs });
+  const orderLabels = { pnl_percent: 'PnL %', pnl_sol: 'PnL SOL', closed_at_ms: 'Recent' };
+  const modeLabel = mode === 'all' ? 'All Modes' : mode === 'dry_run' ? 'Dry-run' : 'Live';
+
+  const lines = [`🏆 <b>Top Performance PnL</b>`, `${modeLabel} · Sort: ${orderLabels[orderBy] || orderBy} · Window: ${window}`, ''];
+
+  if (positions.length) {
+    lines.push('<b>Top Positions</b>');
+    for (const p of positions) {
+      const sym = escapeHtml(p.symbol || short(p.mint));
+      const pnlPct = fmtPct(p.pnl_percent ?? 0);
+      const pnlSol = p.pnl_sol != null ? ` (${p.pnl_sol >= 0 ? '+' : ''}${Number(p.pnl_sol).toFixed(4)} SOL)` : '';
+      lines.push(`• <b>${sym}</b> ${pnlPct}${pnlSol}`);
+    }
+  } else {
+    lines.push('No closed positions yet.');
+  }
+
+  if (stratRows.length) {
+    lines.push('', '<b>By Strategy</b>');
+    for (const s of stratRows) {
+      const wr = s.total > 0 ? Math.round((s.wins / s.total) * 100) : 0;
+      const sign = s.total_pnl_sol >= 0 ? '+' : '';
+      lines.push(`• <b>${escapeHtml(s.strategy)}</b>: ${s.total} trades · WR ${wr}% · ${sign}${Number(s.total_pnl_sol).toFixed(4)} SOL`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export function topPnlKeyboard(orderBy = 'pnl_percent', mode = 'all', window = '30d') {
+  const modes = ['all', 'dry_run', 'live'];
+  const orders = ['pnl_percent', 'pnl_sol', 'closed_at_ms'];
+  const windows = ['7d', '30d', 'all'];
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        modes.map(m => ({ text: `${m === mode ? '▶ ' : ''}${m === 'dry_run' ? 'Dry' : m === 'live' ? 'Live' : 'All'}`, callback_data: `toppnl:${orderBy}:${m}:${window}` })),
+        orders.map(o => ({ text: `${o === orderBy ? '▶ ' : ''}${o === 'pnl_percent' ? 'PnL%' : o === 'pnl_sol' ? 'SOL' : 'Recent'}`, callback_data: `toppnl:${o}:${mode}:${window}` })),
+        windows.map(w => ({ text: `${w === window ? '▶ ' : ''}${w}`, callback_data: `toppnl:${orderBy}:${mode}:${w}` })),
+        [{ text: 'Back to PnL', callback_data: 'menu:pnl' }, { text: 'Back', callback_data: 'menu:main' }],
+      ],
+    },
+  };
 }
 
 async function editMenuMessage(query, text, extra = {}) {
