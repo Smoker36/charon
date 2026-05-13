@@ -32,12 +32,30 @@ import { runLearning, runSmartDegenLearning, sendLessons } from '../learning/com
 import { fetchWalletPnl } from '../enrichment/wallets.js';
 import { autoImportWallets, purgeAutoWallets, autoWalletCount } from '../enrichment/smartWalletImport.js';
 import { walletMonitorStats } from '../signals/walletMonitor.js';
+import { handleChatMessage, clearChatHistory, hasChatHistory } from './chat.js';
 
 export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
   const chatId = msg.chat.id;
   if (await consumeNumericFilterInput(chatId, text, msg.message_id)) return;
-  if (!text.startsWith('/')) return;
+
+  // Free-form chat — route non-command messages to LLM agent
+  if (!text.startsWith('/')) {
+    await bot.sendChatAction(chatId, 'typing');
+    const reply = await handleChatMessage(text, chatId);
+    return bot.sendMessage(chatId, reply, { parse_mode: 'HTML', disable_web_page_preview: true });
+  }
+  if (text.startsWith('/reset')) {
+    clearChatHistory(chatId);
+    return bot.sendMessage(chatId, '🔄 Chat history cleared. Starting fresh.');
+  }
+  if (text.startsWith('/ask')) {
+    const question = text.slice('/ask'.length).trim();
+    if (!question) return bot.sendMessage(chatId, 'Usage: /ask &lt;your question&gt;\n\nOr just type freely without any command.', { parse_mode: 'HTML' });
+    await bot.sendChatAction(chatId, 'typing');
+    const reply = await handleChatMessage(question, chatId);
+    return bot.sendMessage(chatId, reply, { parse_mode: 'HTML', disable_web_page_preview: true });
+  }
   if (text.startsWith('/menu')) return sendMenu(chatId);
   if (text.startsWith('/positions')) return sendPositions(chatId);
   if (text.startsWith('/sell')) {
@@ -323,6 +341,8 @@ export async function toggleTrailing(chatId, id, query = null) {
 
 export function setupTelegram() {
   bot.setMyCommands([
+    { command: 'ask', description: 'Ask the agent anything (or just type freely)' },
+    { command: 'reset', description: 'Clear chat conversation history' },
     { command: 'menu', description: 'Open Charon menu' },
     { command: 'strategy', description: 'Show/switch strategy' },
     { command: 'stratset', description: 'Set strategy config (stratset id key value)' },
