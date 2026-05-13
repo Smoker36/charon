@@ -107,8 +107,8 @@ export async function handleMessage(msg) {
   }
   if (text.startsWith('/walletadd')) {
     const [, label, address, kindArg] = text.split(/\s+/);
-    if (!label || !address) return bot.sendMessage(chatId, 'Usage: /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol]', { parse_mode: 'HTML' });
-    const validKinds = new Set(['wallet', 'smartwallet', 'kol']);
+    if (!label || !address) return bot.sendMessage(chatId, 'Usage: /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol|ratwallet]', { parse_mode: 'HTML' });
+    const validKinds = new Set(['wallet', 'smartwallet', 'kol', 'ratwallet']);
     const kind = validKinds.has(kindArg) ? kindArg : 'wallet';
     db.prepare(`
       INSERT INTO saved_wallets (label, address, created_at_ms, kind) VALUES (?, ?, ?, ?)

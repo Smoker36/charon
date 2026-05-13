@@ -236,7 +236,7 @@ export function walletsText() {
   const autoCount = autoWalletCount();
   const header = [`👛 <b>Saved Wallets</b> (${rows.length} total · ${autoCount} auto-imported)`];
   if (!rows.length) return `${header[0]}\n\nNo saved wallets.\nUse /walletadd &lt;label&gt; &lt;address&gt; [smartwallet|kol]\nOr /smartimport to auto-import from GMGN.`;
-  const groups = { wallet: [], smartwallet: [], kol: [] };
+  const groups = { wallet: [], smartwallet: [], kol: [], ratwallet: [] };
   for (const row of rows) (groups[row.kind || 'wallet'] || groups.wallet).push(row);
   const MAX_PER_GROUP = 15;
   const fmt = (r) => `• <b>${escapeHtml(r.label)}</b>: <code>${escapeHtml(r.address)}</code>`;
@@ -255,6 +255,11 @@ export function walletsText() {
     const shown = groups.kol.slice(0, MAX_PER_GROUP);
     const hidden = groups.kol.length - shown.length;
     sections.push(`<b>KOL Wallets (${groups.kol.length})</b>\n${shown.map(fmt).join('\n')}${hidden > 0 ? `\n<i>…and ${hidden} more</i>` : ''}`);
+  }
+  if (groups.ratwallet.length) {
+    const shown = groups.ratwallet.slice(0, MAX_PER_GROUP);
+    const hidden = groups.ratwallet.length - shown.length;
+    sections.push(`<b>Rat Wallets 🐀 (${groups.ratwallet.length})</b>\n${shown.map(fmt).join('\n')}${hidden > 0 ? `\n<i>…and ${hidden} more</i>` : ''}`);
   }
   return `${header[0]}\n\n${sections.join('\n\n')}`;
 }
