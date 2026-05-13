@@ -75,6 +75,8 @@ export function buildFeeSnapshot(fee, signature) {
 }
 
 export function signalLabel(signals = {}) {
+  if (signals.route === 'smart_wallet_buy') return '🧠 smart wallet buy';
+  if (signals.route === 'kol_buy') return '🌟 KOL buy';
   return [
     signals.hasFeeClaim ? 'fees' : null,
     signals.hasGraduated ? 'graduated' : null,
@@ -104,13 +106,19 @@ export function filterCandidate(candidate) {
   const dexPaidEnabled = boolSetting('dex_paid', false);
   const tokenAgeMs = Number(candidate.metrics.tokenAgeMs || 0);
 
+  // Wallet-signal routes (smart_wallet_buy / kol_buy) bypass fee requirement —
+  // the trigger is the wallet buy itself, not a fee claim event.
+  const isWalletSignal = candidate.walletSignal != null ||
+    candidate.signals?.route === 'smart_wallet_buy' ||
+    candidate.signals?.route === 'kol_buy';
+
   // Fee claim check
   if (candidate.feeClaim) {
     const minFee = strat.min_fee_claim_sol ?? 0.5;
     if (minFee > 0 && feeSol < minFee) {
       failures.push(`fee claim: ${feeSol} SOL < min ${minFee} SOL`);
     }
-  } else if (strat.require_fee_claim) {
+  } else if (strat.require_fee_claim && !isWalletSignal) {
     failures.push('fee claim: missing (required by strategy)');
   }
 
