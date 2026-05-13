@@ -5,11 +5,11 @@ import { storeDecision, storeBatchDecision, logDecisionEvent } from '../db/decis
 import { buildCandidate, filterCandidate, signalLabel } from './candidateBuilder.js';
 import { decideCandidateBatch } from './llm.js';
 import { activeStrategy } from '../db/settings.js';
-import { createDryRunPosition, createLivePosition, canOpenMorePositions, openPositionCount, tradingMode, openPositions, forceClosePosition } from '../db/positions.js';
+import { createDryRunPosition, createLivePosition, canOpenMorePositions, openPositionCount, tradingMode, openPositions } from '../db/positions.js';
 import { sendBatchReveal, sendTelegram, sendPositionOpen, sendTradeIntent, sendPositionExit } from '../telegram/send.js';
 import { candidateSummary } from '../telegram/format.js';
 import { createTradeIntent } from '../db/intents.js';
-import { refreshCandidateForExecution } from '../execution/positions.js';
+import { refreshCandidateForExecution, forceClosePosition } from '../execution/positions.js';
 import { executeLiveBuy } from '../execution/router.js';
 import { graduated } from '../signals/graduated.js';
 import { setDegenHandler } from '../signals/trending.js';
